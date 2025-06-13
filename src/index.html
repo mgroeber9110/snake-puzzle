@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name=""description" content="A 3D simulation of a Rubik's Snake using Three.js.">
+    <meta name="keywords" content="Rubik's Snake, 3D simulation, Three.js, WebGL">
+    <link rel="canonical" href="https://www.mgroeber.de/misc/snake.html"/> 
+    <title>Rubik's Snake Simulation</title>
+    <link rel="stylesheet" href="snake-styles.css">
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.174.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/"
+          }
+        }
+      </script>
+      <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, snake, pivotGroup, angle = -1, dir, joint, target;
+
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let isAnimating = false;
+
+        function createPrismElement(s, color, vflip, hflip) {
+            const verticesOfPrism = [
+                -s,  s,  s,
+                 s,  s,  s,
+                 s, -s,  s,
+                -s, -s,  s,
+                -s,  s, -s,
+                 s,  s, -s                
+            ];
+            const facesOfPrism = [
+                0, 3, 2,    0, 2, 1,
+                0, 1, 5,    0, 5, 4,
+                1, 2, 5,
+                0, 4, 3,
+                4, 5, 2,    4, 2, 3
+            ];
+            const geometry = new THREE.PolyhedronGeometry(verticesOfPrism, facesOfPrism, 0.86, 0);
+            if (Boolean(hflip) | Boolean(vflip)) {
+                let axis;
+                if (Boolean(hflip) & Boolean(vflip)) {
+                    axis = new THREE.Vector3(1, 0, 0);
+                } else if (Boolean(hflip)) {
+                    axis = new THREE.Vector3(0, 1, 0);
+                } else {
+                    axis = new THREE.Vector3(0, 0, 1);
+                }
+                geometry.applyMatrix4(new THREE.Matrix4().makeRotationAxis(axis, Math.PI));
+            }
+            const material = new THREE.MeshStandardMaterial({ color: color });
+            return new THREE.Mesh(geometry, material);
+        }
+
+        function init() {
+            // Set up the scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xeeeeee);
+
+            // Set up the camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(5, 5, 10);
+
+            // Set up the renderer
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true; // Enable shadow mapping
+            document.body.appendChild(renderer.domElement);
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 10000);
+            pointLight.position.set(10, 30, 10);
+            pointLight.shadow.mapSize.width = 1024; // Increase shadow resolution
+            pointLight.shadow.mapSize.height = 1024;
+            pointLight.shadow.camera.near = 0.5; // Adjust near clipping plane
+            pointLight.shadow.camera.far = 50;  // Adjust far clipping plane
+            pointLight.castShadow = true; // Enable shadow casting
+            scene.add(pointLight);
+
+            // Add a solid surface
+            const planeGeometry = new THREE.PlaneGeometry(50, 50);
+            const planeMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2; // Rotate to make it horizontal
+            plane.position.y = -10; // Position the plane slightly below the snake
+            plane.receiveShadow = true; // Enable shadow reception
+            scene.add(plane);
+
+            // Create the Rubik's Snake
+            snake = new THREE.Group();
+            pivotGroup = [];
+
+            const blockSize = 1;
+            for (let i = 0; i < 24; i++) {
+                let block = new createPrismElement(blockSize, i % 2 === 0 ? 0x0077ff : 0xff5500, (i % 4) % 2 == 0, i % 2 == 1);
+                block.castShadow = true; // Enable shadow casting
+
+                const pivot = new THREE.Object3D();
+                pivot.add(block);
+                if (i % 2 == 0) {
+                    pivot.position.set(0, 0, -blockSize);
+                } else {
+                    pivot.position.set(0, -blockSize, 0);
+                }
+
+                if (i > 0) {
+                    pivotGroup[i - 1].add(pivot);
+                } else {
+                    snake.add(pivot);
+                }
+
+                pivotGroup.push(pivot);
+            }
+
+            scene.add(snake);
+
+            // Set up controls
+            const controls = new OrbitControls(camera, renderer.domElement);
+
+            // Start the animation
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isAnimating) {
+                // Animate the selected joint
+                if (angle > 0) {
+                    angle--;
+                    if (joint % 2 == 0) {
+                        pivotGroup[joint].rotation.z = target - dir * angle / 90;
+                    } else {
+                        pivotGroup[joint].rotation.y = target - dir * angle / 90;
+                    }
+                } else {
+                    isAnimating = false;
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+
+        // Handle resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Mouse click event to rotate a segment
+        renderer.domElement.addEventListener('pointerdown', (event) => {
+            if (isAnimating) return; // Prevent interaction during animation
+
+            // Calculate mouse position in normalized device coordinates
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Collect all mesh blocks
+            let meshes = [];
+            for (let i = 0; i < pivotGroup.length; i++) {
+                if (pivotGroup[i].children.length > 0) {
+                    meshes.push({ mesh: pivotGroup[i].children[0], index: i });
+                }
+            }
+
+            // Check intersections
+            const intersects = raycaster.intersectObjects(meshes.map(m => m.mesh));
+            if (intersects.length > 0) {
+                // Find which segment was clicked
+                const meshIndex = meshes.findIndex(m => m.mesh === intersects[0].object);
+                if (meshIndex !== -1) {
+                    joint = meshIndex;
+                    dir = Math.PI/2; // Math.random() > 0.5 ? Math.PI/2 : -Math.PI/2;
+                    if (joint % 2 == 0) {
+                        target = pivotGroup[joint].rotation.z;
+                    } else {
+                        target = pivotGroup[joint].rotation.y;
+                    }
+                    target = Math.round((target + dir) / (Math.PI/2)) % 4 * (Math.PI/2);
+                    angle = 90;
+                    isAnimating = true;
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
