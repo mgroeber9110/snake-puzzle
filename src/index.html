@@ -7,7 +7,48 @@
     <meta name="keywords" content="Rubik's Snake, 3D simulation, Three.js, WebGL">
     <link rel="canonical" href="https://www.mgroeber.de/misc/snake.html"/> 
     <title>Rubik's Snake Simulation</title>
-    <link rel="stylesheet" href="snake-styles.css">
+    <style>
+        /* Inline styles moved from snake-styles.css to make this a single-file app */
+        html, body {
+            margin: 0;
+            height: 100%;
+            width: 100%;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #eeeeee;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow: hidden;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            display: block;
+            user-select: none;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+
+        .ui {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.85);
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            font-size: 13px;
+            color: #222;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body>
     <div id="canvas-container"></div>
@@ -71,10 +112,12 @@
             camera.position.set(5, 5, 10);
 
             // Set up the renderer
-            renderer = new THREE.WebGLRenderer();
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio || 1);
             renderer.shadowMap.enabled = true; // Enable shadow mapping
-            document.body.appendChild(renderer.domElement);
+            // append renderer to the dedicated container
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
 
             // Add lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
