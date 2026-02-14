@@ -2,7 +2,7 @@
 
 This project is a simulation of the Rubik's Snake puzzle using Three.js. It provides an interactive 3D representation of the puzzle, allowing users to manipulate and animate the snake.
 
-To play, serve the `src` folder from a local webserver (e.g. using `ruby -run -e httpd -- . -p 8000`).
+To play, serve the `src` folder from a local webserver (e.g. using `ruby -run -e httpd -- src -p 8000`).
 
 ## Iteration 1
 
