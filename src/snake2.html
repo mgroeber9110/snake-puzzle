@@ -115,6 +115,7 @@
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
         let intersectedSegment = null;
+        const collisionObjects = []; // Invisible collision geometry for hit detection
 
         // --- Initialization ---
         function init() {
@@ -346,6 +347,17 @@
 
                     pivot.add(segmentMesh);
                     
+                    // Create invisible collision box for better hit detection from all angles
+                    const collisionGeo = new THREE.BoxGeometry(SEGMENT_SIZE * 0.9, SEGMENT_SIZE * 1.2, SEGMENT_SIZE * 0.9);
+                    const collisionMat = new THREE.MeshBasicMaterial({ visible: false });
+                    const collisionBox = new THREE.Mesh(collisionGeo, collisionMat);
+                    collisionBox.position.set(0, h, 0); // Same position as segment mesh
+                    pivot.add(collisionBox);
+                    
+                    // Link collision box to segment for easy lookup
+                    collisionBox.userData.segmentMesh = segmentMesh;
+                    collisionObjects.push(collisionBox);
+                    
                     if (i === 0) parentObject.add(pivot);
 
                     this.segments.push(segmentMesh);
@@ -533,9 +545,9 @@
             requestAnimationFrame(animate);
             controls.update();
 
-            // Raycasting logic for hover
+            // Raycasting logic for hover - use collision boxes for hit detection
             raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(snake.segments);
+            const intersects = raycaster.intersectObjects(collisionObjects);
             
             // Reset previous
             if (intersectedSegment) {
@@ -546,7 +558,8 @@
             }
 
             if (intersects.length > 0) {
-                const mesh = intersects[0].object;
+                const collisionBox = intersects[0].object;
+                const mesh = collisionBox.userData.segmentMesh;
                 const index = snake.segments.indexOf(mesh);
                 
                 if (index > 0 && !isAnimating) { // Highlight only if movable
