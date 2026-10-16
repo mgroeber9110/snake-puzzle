@@ -18,3 +18,19 @@ So far, there is no checking for valid configurations.
 Started from scatch, this time using only Gemini 3 (mostly Thinking) and edited exclusively through prompting.
 
 This adds hit detection against invalid configurations and also allows starting/stopping automatic movements.
+
+## Kinematic model
+
+`src/kinematics.js` holds the pure kinematic model of the snake, independent of Three.js, so it can be reused
+for training a controller:
+
+- 24 wedges, 23 joints; joint angles in quarter turns (0..3), all zeros is the straight stick.
+- `forwardKinematics(angles)` returns the lattice cell and rotation of every wedge (fractional angles are allowed for animation).
+- `findCollisions(angles)` / `isValid(angles)` check for overlapping wedges exactly: every wedge is half of a lattice cube,
+  and two wedges only fit into the same cube when they are complementary halves.
+- `validMoves(angles)` lists all quarter-turn twists that lead to a valid shape (only the end state is checked, not the sweep).
+
+`src/snake2.html` uses this module for placing the segments and for collision checks, so it must be served together with
+`kinematics.js`.
+
+Run the tests with `npm test` (Node 22 or later, no dependencies).

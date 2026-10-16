@@ -91,9 +91,10 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as K from './kinematics.js';
 
         // --- Configuration ---
-        const SEGMENT_COUNT = 24;
+        const SEGMENT_COUNT = K.NUM_WEDGES;
         const SEGMENT_SIZE = 2; 
         const ANIMATION_SPEED = 0.1; 
         const COLORS = {
@@ -106,7 +107,6 @@
         // --- Global State ---
         let scene, camera, renderer, controls;
         let snake; 
-        let ghostSnake; 
         let isAnimating = false;
         let isAutoPlaying = false; 
         let moveCount = 0;
@@ -175,8 +175,7 @@
             scene.add(floor);
 
             // Create Snakes
-            snake = new Snake(scene, true);     
-            ghostSnake = new Snake(scene, false); 
+            snake = new Snake(scene);
 
             // Events
             window.addEventListener('resize', onWindowResize);
@@ -233,7 +232,8 @@
                 const index = snake.segments.indexOf(intersectedSegment);
                 
                 if (index > 0) {
-                    tryManualTwist(index, direction);
+                    // Segment i turns about the joint to its predecessor.
+                    tryManualTwist(index - 1, direction);
                 } else {
                     updateStatus("Cannot twist anchor segment.", true);
                     setTimeout(() => updateStatus("Ready"), 1000);
@@ -279,12 +279,16 @@
         }
 
         // --- Snake Class ---
+        // Rendering only: the joint angles live in `angles` and every segment's
+        // pose comes from the kinematics module.
         class Snake {
-            constructor(sceneContext, visible = true) {
+            constructor(sceneContext) {
                 this.segments = [];
-                this.joints = []; 
+                this.groups = [];
+                this.angles = K.straight(SEGMENT_COUNT);
                 this.root = new THREE.Group();
-                this.visible = visible;
+                // Keep the previous on-screen orientation of the anchor segment.
+                this.root.rotation.x = Math.PI / 2;
                 
                 const geo = createWedgeGeometry(SEGMENT_SIZE);
                 // Materials - Enable DoubleSide to ensure Raycasting works from all angles
@@ -313,135 +317,69 @@
                     emissive: 0x550000,
                     side: THREE.DoubleSide
                 });
-                
-                let parentObject = this.root;
-                const h = SEGMENT_SIZE / 2;
+
+                const edgeGeo = new THREE.EdgesGeometry(geo);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.2 });
+                const collisionGeo = new THREE.BoxGeometry(SEGMENT_SIZE * 0.9, SEGMENT_SIZE * 1.2, SEGMENT_SIZE * 0.9);
+                const collisionMat = new THREE.MeshBasicMaterial({ visible: false });
 
                 for (let i = 0; i < SEGMENT_COUNT; i++) {
-                    const pivot = new THREE.Group();
-                    
-                    if (i === 0) {
-                        // Anchor segment 0
-                        pivot.position.set(0, 0, 0);
-                        pivot.rotation.x = Math.PI / 2; 
-                    } else {
-                        // Joint segments 1+
-                        pivot.position.set(0, h, -h);
-                        pivot.rotation.set(Math.PI / 2, 0, Math.PI); 
-                        this.joints[i-1].add(pivot);
-                    }
+                    // Each segment group is placed directly from the kinematic pose.
+                    const group = new THREE.Group();
+                    group.matrixAutoUpdate = false;
 
                     const segmentMesh = new THREE.Mesh(geo, i % 2 === 0 ? this.matA : this.matB);
                     segmentMesh.castShadow = true;
                     segmentMesh.receiveShadow = true;
-                    segmentMesh.position.set(0, h, 0); 
                     
                     // Store original material for hover reset
                     segmentMesh.userData.originalMat = i % 2 === 0 ? this.matA : this.matB;
-
-                    if (visible) {
-                        const edgeGeo = new THREE.EdgesGeometry(geo);
-                        const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.2 });
-                        segmentMesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
-                    }
-
-                    pivot.add(segmentMesh);
+                    segmentMesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
+                    group.add(segmentMesh);
                     
-                    // Create invisible collision box for better hit detection from all angles
-                    const collisionGeo = new THREE.BoxGeometry(SEGMENT_SIZE * 0.9, SEGMENT_SIZE * 1.2, SEGMENT_SIZE * 0.9);
-                    const collisionMat = new THREE.MeshBasicMaterial({ visible: false });
+                    // Invisible box for better hover/click detection from all angles
                     const collisionBox = new THREE.Mesh(collisionGeo, collisionMat);
-                    collisionBox.position.set(0, h, 0); // Same position as segment mesh
-                    pivot.add(collisionBox);
-                    
-                    // Link collision box to segment for easy lookup
                     collisionBox.userData.segmentMesh = segmentMesh;
                     collisionObjects.push(collisionBox);
-                    
-                    if (i === 0) parentObject.add(pivot);
+                    group.add(collisionBox);
 
+                    this.root.add(group);
                     this.segments.push(segmentMesh);
-                    this.joints.push(pivot);
-                    
-                    // The rotation axis is now the local Y-axis
-                    pivot.userData = { 
-                        currentAngle: 0, 
-                        baseRotation: pivot.rotation.y // Store initial Y rotation
-                    };
+                    this.groups.push(group);
                 }
 
-                if (visible) sceneContext.add(this.root);
+                this.setPose(this.angles);
+                sceneContext.add(this.root);
             }
 
-            setAngles(angles) {
-                for (let i = 1; i < this.joints.length; i++) {
-                    const joint = this.joints[i];
-                    // Apply rotation to the Y-axis (hinge axis)
-                    joint.rotation.y = joint.userData.baseRotation + angles[i];
-                    joint.updateMatrix();
-                    joint.updateMatrixWorld(true);
-                }
-            }
-            
-            getAngles() {
-                return this.joints.map(j => j.userData.currentAngle);
-            }
-
-            updateBoxes() {
-                const boxes = [];
-                const shrink = 0.2; 
-                for (let i = 0; i < this.segments.length; i++) {
-                    const mesh = this.segments[i];
-                    const box = new THREE.Box3().setFromObject(mesh);
-                    box.min.addScalar(shrink);
-                    box.max.subScalar(shrink);
-                    boxes.push(box);
-                }
-                return boxes;
+            // Place all segments for the given (possibly fractional) joint angles in quarter turns.
+            setPose(angles) {
+                const poses = K.forwardKinematics(angles);
+                poses.forEach((pose, i) => {
+                    const r = pose.rotation;
+                    const p = pose.position.map(v => v * SEGMENT_SIZE);
+                    this.groups[i].matrix.set(
+                        r[0], r[1], r[2], p[0],
+                        r[3], r[4], r[5], p[1],
+                        r[6], r[7], r[8], p[2],
+                        0, 0, 0, 1
+                    );
+                    this.groups[i].matrixWorldNeedsUpdate = true;
+                });
             }
         }
 
         // --- Logic Engine ---
 
-        function checkSelfCollision(snakeInstance) {
-            snakeInstance.root.updateMatrixWorld(true);
-            const boxes = snakeInstance.updateBoxes();
-            
-            for (let i = 0; i < boxes.length; i++) {
-                // We check against segments that are 3 or more steps away, as 
-                // i+1 and i+2 are physically attached/adjacent and should overlap slightly.
-                for (let j = i + 3; j < boxes.length; j++) { 
-                    if (boxes[i].intersectsBox(boxes[j])) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        async function tryManualTwist(index, direction) {
-            updateStatus("Checking move...");
-            
-            const currentAngles = snake.getAngles();
-            const currentAngle = currentAngles[index];
-            
-            // Target angle (90 degrees twist)
-            const targetAngle = currentAngle + (Math.PI / 2 * direction);
-            
-            // Verify with Ghost
-            const testAngles = [...currentAngles];
-            testAngles[index] = targetAngle;
-            
-            ghostSnake.setAngles(testAngles);
-            
-            if (!checkSelfCollision(ghostSnake)) {
-                updateStatus(`Twisting Segment ${index + 1}...`);
-                await animateMove(index, targetAngle);
+        async function tryManualTwist(joint, direction) {
+            if (K.isValid(K.twist(snake.angles, joint, direction))) {
+                updateStatus(`Twisting Segment ${joint + 2}...`);
+                await animateMove(joint, direction);
                 moveCount++;
                 document.getElementById('move-count').innerText = moveCount;
             } else {
                 updateStatus("Blocked! Collision detected.", true);
-                flashError(snake.segments[index]);
+                flashError(snake.segments[joint + 1]);
             }
         }
 
@@ -464,40 +402,11 @@
                 return;
             }
 
-            const possibleMoves = [0, Math.PI/2, Math.PI, -Math.PI/2];
-            let bestMove = null;
-            let attempts = 0;
-            const maxAttempts = 30;
-
-            const currentAngles = snake.getAngles(); 
-
-            while (attempts < maxAttempts) {
-                const jointIndex = Math.floor(Math.random() * (SEGMENT_COUNT - 1)) + 1;
-                const currentAngle = currentAngles[jointIndex];
-                
-                // Pick random new angle
-                const targetAngle = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-
-                if (Math.abs(targetAngle - currentAngle) < 0.01) {
-                    attempts++;
-                    continue; 
-                }
-
-                const testAngles = [...currentAngles];
-                testAngles[jointIndex] = targetAngle;
-                
-                ghostSnake.setAngles(testAngles);
-                
-                if (!checkSelfCollision(ghostSnake)) {
-                    bestMove = { index: jointIndex, angle: targetAngle };
-                    break;
-                }
-                attempts++;
-            }
-
-            if (bestMove) {
-                updateStatus(`Auto: Twisting Segment ${bestMove.index + 1}`);
-                await animateMove(bestMove.index, bestMove.angle);
+            const moves = K.validMoves(snake.angles);
+            if (moves.length > 0) {
+                const move = moves[Math.floor(Math.random() * moves.length)];
+                updateStatus(`Auto: Twisting Segment ${move.joint + 2}`);
+                await animateMove(move.joint, move.direction);
                 moveCount++;
                 document.getElementById('move-count').innerText = moveCount;
             }
@@ -511,11 +420,10 @@
             el.className = isError ? 'status error' : 'status';
         }
 
-        function animateMove(jointIndex, targetAngle) {
+        function animateMove(joint, direction) {
             return new Promise(resolve => {
                 isAnimating = true;
-                const joint = snake.joints[jointIndex];
-                const startAngle = joint.userData.currentAngle;
+                const start = snake.angles;
                 
                 let progress = 0;
                 
@@ -524,15 +432,15 @@
                     if (progress >= 1) progress = 1;
                     
                     const ease = 1 - Math.pow(1 - progress, 3);
-                    const val = startAngle + (targetAngle - startAngle) * ease;
-                    
-                    // Apply rotation to Y-axis
-                    joint.rotation.y = joint.userData.baseRotation + val; 
+                    const frame = start.slice();
+                    frame[joint] += direction * ease;
+                    snake.setPose(frame);
                     
                     if (progress < 1) {
                         requestAnimationFrame(loop);
                     } else {
-                        joint.userData.currentAngle = targetAngle;
+                        snake.angles = K.twist(start, joint, direction);
+                        snake.setPose(snake.angles);
                         isAnimating = false;
                         resolve();
                     }
