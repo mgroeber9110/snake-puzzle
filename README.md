@@ -19,8 +19,9 @@ Started from scatch, this time using only Gemini 3 (mostly Thinking) and edited 
 
 This adds hit detection against invalid configurations and also allows starting/stopping automatic movements.
 
-## Kinematic model
+## Iteration 3: Kinematic model
 
+`src/snake3.html` builds on iteration 2, but separates the kinematics from the rendering.
 `src/kinematics.js` holds the pure kinematic model of the snake, independent of Three.js, so it can be reused
 for training a controller:
 
@@ -30,7 +31,7 @@ for training a controller:
   and two wedges only fit into the same cube when they are complementary halves.
 - `validMoves(angles)` lists all quarter-turn twists that lead to a valid shape (only the end state is checked, not the sweep).
 
-`src/snake2.html` uses this module for placing the segments and for collision checks, so it must be served together with
+`src/snake3.html` uses this module for placing the segments and for collision checks, so it must be served together with
 `kinematics.js`.
 
 Run the tests with `npm test` (Node 22 or later, no dependencies).

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name=""description" content="A 3D simulation of a Rubik's Snake using Three.js.">
+    <meta name="keywords" content="Rubik's Snake, 3D simulation, Three.js, WebGL">
+    <link rel="canonical" href="https://www.mgroeber.de/misc/snake3.html"/> 
+    <title>Rubik's Snake Simulation (kinematic model)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            pointer-events: none; /* Let clicks pass through around buttons */
+            user-select: none;
+            max-width: 300px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        p { margin: 5px 0; font-size: 0.9rem; color: #ccc; }
+        .status { font-weight: bold; color: #4ade80; }
+        .error { color: #f87171; transition: color 0.3s; }
+        
+        /* Interactive Controls */
+        #controls {
+            margin-top: 15px;
+            pointer-events: auto; /* Re-enable clicks for buttons */
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        button:hover { background: #2563eb; }
+        button:active { transform: scale(0.95); }
+        button.stop { background: #ef4444; }
+        button.stop:hover { background: #dc2626; }
+        
+        .instructions {
+            margin-top: 15px;
+            font-size: 0.8rem;
+            color: #888;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <h1>Rubik's Snake</h1>
+        <p>Status: <span id="status" class="status">Ready</span></p>
+        <p>Moves: <span id="move-count">0</span></p>
+        
+        <div id="controls">
+            <button id="btn-start">Start Auto</button>
+            <button id="btn-stop" class="stop">Stop</button>
+        </div>
+
+        <div class="instructions">
+            <p>• <strong>Left Click</strong> segment to twist 90°</p>
+            <p>• <strong>Right Click</strong> segment to twist -90°</p>
+            <p>• Manual moves obey physics</p>
+        </div>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as K from './kinematics.js';
+
+        // --- Configuration ---
+        const SEGMENT_COUNT = K.NUM_WEDGES;
+        const SEGMENT_SIZE = 2; 
+        const ANIMATION_SPEED = 0.1; 
+        const COLORS = {
+            A: 0xcc3333, // Red
+            B: 0xffffff, // White
+            HOVER: 0xffd700, // Gold
+            ERROR: 0xff0000 // Bright Red
+        };
+
+        // --- Global State ---
+        let scene, camera, renderer, controls;
+        let snake; 
+        let isAnimating = false;
+        let isAutoPlaying = false; 
+        let moveCount = 0;
+        
+        // Raycasting
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let intersectedSegment = null;
+        const collisionObjects = []; // Invisible collision geometry for hit detection
+
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+            scene.fog = new THREE.Fog(0x222222, 20, 100);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(25, 25, 25);
+            camera.lookAt(0, 0, 0);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = false;
+            controls.autoRotateSpeed = 1.0;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(10, 20, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            const d = 30;
+            dirLight.shadow.camera.left = -d;
+            dirLight.shadow.camera.right = d;
+            dirLight.shadow.camera.top = d;
+            dirLight.shadow.camera.bottom = -d;
+            dirLight.shadow.bias = -0.0005;
+            scene.add(dirLight);
+
+            // Floor
+            const floorGeo = new THREE.PlaneGeometry(200, 200);
+            const floorMat = new THREE.MeshStandardMaterial({ 
+                color: 0x151515, 
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -10;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Create Snakes
+            snake = new Snake(scene);
+
+            // Events
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerdown', onPointerDown);
+            
+            // Prevent context menu on right click
+            window.addEventListener('contextmenu', (e) => e.preventDefault());
+            
+            // UI Buttons
+            document.getElementById('btn-start').addEventListener('click', () => {
+                if (!isAutoPlaying) {
+                    isAutoPlaying = true;
+                    updateStatus("Auto-Pilot Started");
+                    gameLoop();
+                }
+            });
+            
+            document.getElementById('btn-stop').addEventListener('click', () => {
+                isAutoPlaying = false;
+                updateStatus("Auto-Pilot Stopped");
+            });
+
+            // Start Render Loop
+            requestAnimationFrame(animate);
+            
+            // Initial Status
+            updateStatus("Ready. Click segments to twist.");
+            
+            // Start Loop (it will check isAutoPlaying)
+            gameLoop();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onPointerMove(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            // Ignore if clicking on UI
+            if (event.target.tagName === 'BUTTON') return;
+            
+            if (intersectedSegment && !isAnimating) {
+                // Determine direction: Left Click (+), Right Click (-)
+                const direction = event.button === 2 ? -1 : 1;
+                
+                // Find index
+                const index = snake.segments.indexOf(intersectedSegment);
+                
+                if (index > 0) {
+                    // Segment i turns about the joint to its predecessor.
+                    tryManualTwist(index - 1, direction);
+                } else {
+                    updateStatus("Cannot twist anchor segment.", true);
+                    setTimeout(() => updateStatus("Ready"), 1000);
+                }
+            }
+        }
+
+        // --- Geometry ---
+        function createWedgeGeometry(size) {
+            const h = size / 2;
+            const vertices = new Float32Array([
+                -h, -h,  h, // 0: BLF
+                 h, -h,  h, // 1: BRF
+                 h, -h, -h, // 2: BRB
+                -h, -h, -h, // 3: BLB
+                -h,  h, -h, // 4: TLB
+                 h,  h, -h, // 5: TRB
+            ]);
+            
+            // Fixed Winding Order so normals point OUTWARD
+            const indices = [
+                // Bottom Face (y = -h) -> Normal Down
+                0, 2, 1,  0, 3, 2,
+                
+                // Back Face (z = -h) -> Normal Back
+                3, 4, 5,  3, 5, 2,
+                
+                // Left Face (x = -h) -> Normal Left
+                0, 4, 3,
+                
+                // Right Face (x = h) -> Normal Right
+                1, 2, 5,
+                
+                // Slope Face -> Normal Up/Front
+                0, 1, 5,  0, 5, 4
+            ];
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
+        // --- Snake Class ---
+        // Rendering only: the joint angles live in `angles` and every segment's
+        // pose comes from the kinematics module.
+        class Snake {
+            constructor(sceneContext) {
+                this.segments = [];
+                this.groups = [];
+                this.angles = K.straight(SEGMENT_COUNT);
+                this.root = new THREE.Group();
+                // Keep the previous on-screen orientation of the anchor segment.
+                this.root.rotation.x = Math.PI / 2;
+                
+                const geo = createWedgeGeometry(SEGMENT_SIZE);
+                // Materials - Enable DoubleSide to ensure Raycasting works from all angles
+                this.matA = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.A, 
+                    roughness: 0.2, 
+                    transparent: true, 
+                    opacity: 0.9,
+                    side: THREE.DoubleSide
+                });
+                this.matB = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.B, 
+                    roughness: 0.2, 
+                    transparent: true, 
+                    opacity: 0.9,
+                    side: THREE.DoubleSide
+                });
+                this.matHover = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.HOVER, 
+                    roughness: 0.2,
+                    side: THREE.DoubleSide
+                });
+                this.matError = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.ERROR, 
+                    roughness: 0.2, 
+                    emissive: 0x550000,
+                    side: THREE.DoubleSide
+                });
+
+                const edgeGeo = new THREE.EdgesGeometry(geo);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.2 });
+                const collisionGeo = new THREE.BoxGeometry(SEGMENT_SIZE * 0.9, SEGMENT_SIZE * 1.2, SEGMENT_SIZE * 0.9);
+                const collisionMat = new THREE.MeshBasicMaterial({ visible: false });
+
+                for (let i = 0; i < SEGMENT_COUNT; i++) {
+                    // Each segment group is placed directly from the kinematic pose.
+                    const group = new THREE.Group();
+                    group.matrixAutoUpdate = false;
+
+                    const segmentMesh = new THREE.Mesh(geo, i % 2 === 0 ? this.matA : this.matB);
+                    segmentMesh.castShadow = true;
+                    segmentMesh.receiveShadow = true;
+                    
+                    // Store original material for hover reset
+                    segmentMesh.userData.originalMat = i % 2 === 0 ? this.matA : this.matB;
+                    segmentMesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
+                    group.add(segmentMesh);
+                    
+                    // Invisible box for better hover/click detection from all angles
+                    const collisionBox = new THREE.Mesh(collisionGeo, collisionMat);
+                    collisionBox.userData.segmentMesh = segmentMesh;
+                    collisionObjects.push(collisionBox);
+                    group.add(collisionBox);
+
+                    this.root.add(group);
+                    this.segments.push(segmentMesh);
+                    this.groups.push(group);
+                }
+
+                this.setPose(this.angles);
+                sceneContext.add(this.root);
+            }
+
+            // Place all segments for the given (possibly fractional) joint angles in quarter turns.
+            setPose(angles) {
+                const poses = K.forwardKinematics(angles);
+                poses.forEach((pose, i) => {
+                    const r = pose.rotation;
+                    const p = pose.position.map(v => v * SEGMENT_SIZE);
+                    this.groups[i].matrix.set(
+                        r[0], r[1], r[2], p[0],
+                        r[3], r[4], r[5], p[1],
+                        r[6], r[7], r[8], p[2],
+                        0, 0, 0, 1
+                    );
+                    this.groups[i].matrixWorldNeedsUpdate = true;
+                });
+            }
+        }
+
+        // --- Logic Engine ---
+
+        async function tryManualTwist(joint, direction) {
+            if (K.isValid(K.twist(snake.angles, joint, direction))) {
+                updateStatus(`Twisting Segment ${joint + 2}...`);
+                await animateMove(joint, direction);
+                moveCount++;
+                document.getElementById('move-count').innerText = moveCount;
+            } else {
+                updateStatus("Blocked! Collision detected.", true);
+                flashError(snake.segments[joint + 1]);
+            }
+        }
+
+        function flashError(mesh) {
+            const original = mesh.userData.originalMat;
+            mesh.material = snake.matError;
+            setTimeout(() => {
+                if (mesh === intersectedSegment) {
+                    mesh.material = snake.matHover;
+                } else {
+                    mesh.material = original;
+                }
+            }, 300);
+        }
+
+        async function gameLoop() {
+            // Polling loop
+            if (!isAutoPlaying || isAnimating) {
+                setTimeout(gameLoop, 100);
+                return;
+            }
+
+            const moves = K.validMoves(snake.angles);
+            if (moves.length > 0) {
+                const move = moves[Math.floor(Math.random() * moves.length)];
+                updateStatus(`Auto: Twisting Segment ${move.joint + 2}`);
+                await animateMove(move.joint, move.direction);
+                moveCount++;
+                document.getElementById('move-count').innerText = moveCount;
+            }
+
+            setTimeout(gameLoop, 50);
+        }
+
+        function updateStatus(text, isError = false) {
+            const el = document.getElementById('status');
+            el.innerText = text;
+            el.className = isError ? 'status error' : 'status';
+        }
+
+        function animateMove(joint, direction) {
+            return new Promise(resolve => {
+                isAnimating = true;
+                const start = snake.angles;
+                
+                let progress = 0;
+                
+                function loop() {
+                    progress += ANIMATION_SPEED;
+                    if (progress >= 1) progress = 1;
+                    
+                    const ease = 1 - Math.pow(1 - progress, 3);
+                    const frame = start.slice();
+                    frame[joint] += direction * ease;
+                    snake.setPose(frame);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(loop);
+                    } else {
+                        snake.angles = K.twist(start, joint, direction);
+                        snake.setPose(snake.angles);
+                        isAnimating = false;
+                        resolve();
+                    }
+                }
+                loop();
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Raycasting logic for hover - use collision boxes for hit detection
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(collisionObjects);
+            
+            // Reset previous
+            if (intersectedSegment) {
+                if (intersectedSegment.material !== snake.matError) {
+                    intersectedSegment.material = intersectedSegment.userData.originalMat;
+                }
+                intersectedSegment = null;
+            }
+
+            if (intersects.length > 0) {
+                const collisionBox = intersects[0].object;
+                const mesh = collisionBox.userData.segmentMesh;
+                const index = snake.segments.indexOf(mesh);
+                
+                if (index > 0 && !isAnimating) { // Highlight only if movable
+                    intersectedSegment = mesh;
+                    if (intersectedSegment.material !== snake.matError) {
+                        intersectedSegment.material = snake.matHover;
+                    }
+                    document.body.style.cursor = 'pointer';
+                } else {
+                    document.body.style.cursor = 'default';
+                }
+            } else {
+                document.body.style.cursor = 'default';
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
