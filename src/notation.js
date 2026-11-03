@@ -18,24 +18,27 @@
 // wedge 2(n-1), and
 //   nR -> joint 2n-2 (between wedge 2n-2 and 2n-1),
 //   nL -> joint 2n-3 (between wedge 2n-3 and 2n-2).
-// Position p is joint angle p. The turn of the bright wedge is measured in
-// the same sense on both sides of a dark wedge (as seen from the dark wedge);
-// with that, the Snowflake example from the page is the highly symmetric
-// closed shape, while flipping one side gives an irregular shape.
+// Position p of a right joint is joint angle p, position p of a left joint is
+// joint angle 4 - p (mod 4): the bright wedges on both sides of a dark wedge
+// turn in the same sense as seen along the stick, which is the opposite sense
+// as seen from the dark wedge. Only this choice turns the Ball example into
+// the ball (3x3x3 block) and the Snowflake example into a flat hexagonal
+// shape; with the other one, the two come out swapped.
 // Which of the two mirror images is "position 1" cannot be read from the text
 // of the page (only from its photos). If it turns out to be the other one,
-// set MIRROR to true: every position p then maps to angle 4 - p.
+// set MIRROR to true: every angle a then becomes 4 - a.
 
 import { NUM_WEDGES } from './kinematics.js';
 
 const MIRROR = false;
 
-function toAngle(position) {
-    return MIRROR ? (4 - position) % 4 : position;
+// Angle for a position on side 'L' or 'R'; the mapping is its own inverse.
+function toAngle(position, side) {
+    return (side === 'L') !== MIRROR ? (4 - position) % 4 : position;
 }
 
-function toPosition(angle) {
-    return MIRROR ? (4 - angle) % 4 : angle;
+function toPosition(angle, side) {
+    return toAngle(angle, side);
 }
 
 /** Joint index for dark wedge `piece` (1-based) and side 'L' or 'R'. */
@@ -76,7 +79,7 @@ export function parseNotation(text, numWedges = NUM_WEDGES) {
         const joint = jointOf(piece, side);
         if (seen.has(joint)) throw new Error(`invalid turn "${token}": ${piece}${side} given twice`);
         seen.add(joint);
-        angles[joint] = toAngle(Number(m[3]));
+        angles[joint] = toAngle(Number(m[3]), side);
     }
     return angles;
 }
@@ -94,9 +97,9 @@ export function toNotation(angles) {
     // ordered by dark wedge with left before right.
     angles.forEach((a, joint) => {
         if (!Number.isInteger(a)) throw new Error(`notation needs integer quarter turns, got ${a}`);
-        const position = toPosition(((a % 4) + 4) % 4);
-        if (position === 0) return;
         const { piece, side } = pieceOf(joint);
+        const position = toPosition(((a % 4) + 4) % 4, side);
+        if (position === 0) return;
         turns.push(`${piece}${side}${position}`);
     });
     return turns.join('-');
