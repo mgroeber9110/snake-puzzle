@@ -34,7 +34,14 @@ for training a controller:
 `src/sweep.js` checks the path of a twist, not only its end state: it samples the rotation finely and tests the exact
 wedge geometry (separating axis test on the triangular prisms). `isTwistFree(angles, joint, direction)` combines both checks.
 
+`src/notation.js` reads and writes shapes in the notation by Thomas Wolter
+(http://thomas-wolter.de/rubik_notation_en.html), e.g. `2R2-3L2-4L2-5R2-6R2-7L2-8L2-10L2-10R2-12R2` (Wolf):
+`parseNotation(text)` returns the joint angles, `toNotation(angles)` the notation string. Dark wedge `n` is model wedge
+`2(n-1)`, `nR` is joint `2n-2`, `nL` is joint `2n-3`, and position `p` is joint angle `p`. The page's text does not say
+which of the two mirror images position 1 is; `MIRROR` in `notation.js` flips it if needed.
+In `src/snake3.html` the current shape is shown in this notation, and a shape can be typed in and set with "Set Shape".
+
 `src/snake3.html` uses these modules for placing the segments and for collision checks, so it must be served together with
-`kinematics.js` and `sweep.js`.
+`kinematics.js`, `sweep.js` and `notation.js`.
 
 Run the tests with `npm test` (Node 22 or later, no dependencies).
