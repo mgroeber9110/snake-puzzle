@@ -92,6 +92,7 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import * as K from './kinematics.js';
+        import { isTwistFree } from './sweep.js';
 
         // --- Configuration ---
         const SEGMENT_COUNT = K.NUM_WEDGES;
@@ -372,7 +373,7 @@
         // --- Logic Engine ---
 
         async function tryManualTwist(joint, direction) {
-            if (K.isValid(K.twist(snake.angles, joint, direction))) {
+            if (isTwistFree(snake.angles, joint, direction)) {
                 updateStatus(`Twisting Segment ${joint + 2}...`);
                 await animateMove(joint, direction);
                 moveCount++;
@@ -402,9 +403,14 @@
                 return;
             }
 
+            // Random valid end state whose twist is also free on the way
             const moves = K.validMoves(snake.angles);
-            if (moves.length > 0) {
-                const move = moves[Math.floor(Math.random() * moves.length)];
+            let move = null;
+            while (moves.length > 0 && !move) {
+                const [candidate] = moves.splice(Math.floor(Math.random() * moves.length), 1);
+                if (isTwistFree(snake.angles, candidate.joint, candidate.direction)) move = candidate;
+            }
+            if (move) {
                 updateStatus(`Auto: Twisting Segment ${move.joint + 2}`);
                 await animateMove(move.joint, move.direction);
                 moveCount++;

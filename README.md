@@ -31,7 +31,10 @@ for training a controller:
   and two wedges only fit into the same cube when they are complementary halves.
 - `validMoves(angles)` lists all quarter-turn twists that lead to a valid shape (only the end state is checked, not the sweep).
 
-`src/snake3.html` uses this module for placing the segments and for collision checks, so it must be served together with
-`kinematics.js`.
+`src/sweep.js` checks the path of a twist, not only its end state: it samples the rotation finely and tests the exact
+wedge geometry (separating axis test on the triangular prisms). `isTwistFree(angles, joint, direction)` combines both checks.
+
+`src/snake3.html` uses these modules for placing the segments and for collision checks, so it must be served together with
+`kinematics.js` and `sweep.js`.
 
 Run the tests with `npm test` (Node 22 or later, no dependencies).
