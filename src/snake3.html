@@ -51,6 +51,25 @@
         button.stop { background: #ef4444; }
         button.stop:hover { background: #dc2626; }
         
+        #notation {
+            margin-top: 15px;
+            pointer-events: auto;
+        }
+        #notation label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+        #notation-input {
+            width: 100%;
+            box-sizing: border-box;
+            background: #111;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 6px 8px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            user-select: text;
+        }
+        #notation .row { display: flex; gap: 10px; margin-top: 8px; }
+
         .instructions {
             margin-top: 15px;
             font-size: 0.8rem;
@@ -80,6 +99,15 @@
             <button id="btn-stop" class="stop">Stop</button>
         </div>
 
+        <div id="notation">
+            <label for="notation-input">Shape (<a href="http://thomas-wolter.de/rubik_notation_en.html" target="_blank" style="color:#888">Wolter notation</a>)</label>
+            <textarea id="notation-input" rows="3" spellcheck="false" placeholder="straight (e.g. 2R2-3L2-4L2)"></textarea>
+            <div class="row">
+                <button id="btn-set-shape">Set Shape</button>
+                <button id="btn-copy-shape">Copy</button>
+            </div>
+        </div>
+
         <div class="instructions">
             <p>• <strong>Left Click</strong> segment to twist 90°</p>
             <p>• <strong>Right Click</strong> segment to twist -90°</p>
@@ -93,6 +121,7 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import * as K from './kinematics.js';
         import { isTwistFree } from './sweep.js';
+        import { parseNotation, toNotation } from './notation.js';
 
         // --- Configuration ---
         const SEGMENT_COUNT = K.NUM_WEDGES;
@@ -200,6 +229,20 @@
                 updateStatus("Auto-Pilot Stopped");
             });
 
+            // Shape notation
+            document.getElementById('btn-set-shape').addEventListener('click', setShapeFromInput);
+            document.getElementById('notation-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setShapeFromInput();
+                }
+            });
+            document.getElementById('btn-copy-shape').addEventListener('click', () => {
+                navigator.clipboard?.writeText(toNotation(snake.angles));
+                updateStatus("Shape copied.");
+            });
+            showNotation();
+
             // Start Render Loop
             requestAnimationFrame(animate);
             
@@ -223,7 +266,7 @@
 
         function onPointerDown(event) {
             // Ignore if clicking on UI
-            if (event.target.tagName === 'BUTTON') return;
+            if (['BUTTON', 'TEXTAREA', 'A'].includes(event.target.tagName)) return;
             
             if (intersectedSegment && !isAnimating) {
                 // Determine direction: Left Click (+), Right Click (-)
@@ -384,6 +427,36 @@
             }
         }
 
+        // Show the current shape in the notation field.
+        function showNotation() {
+            document.getElementById('notation-input').value = toNotation(snake.angles);
+        }
+
+        // Jump to the shape typed into the notation field, if it is valid.
+        function setShapeFromInput() {
+            if (isAnimating) return;
+            let angles;
+            try {
+                angles = parseNotation(document.getElementById('notation-input').value);
+            } catch (e) {
+                updateStatus(e.message, true);
+                return;
+            }
+            const collisions = K.findCollisions(angles);
+            if (collisions.length > 0) {
+                const [i, j] = collisions[0];
+                updateStatus(`Invalid shape: segments ${i + 1} and ${j + 1} overlap.`, true);
+                return;
+            }
+            isAutoPlaying = false;
+            snake.angles = angles;
+            snake.setPose(angles);
+            moveCount = 0;
+            document.getElementById('move-count').innerText = moveCount;
+            showNotation();
+            updateStatus("Shape set.");
+        }
+
         function flashError(mesh) {
             const original = mesh.userData.originalMat;
             mesh.material = snake.matError;
@@ -447,6 +520,7 @@
                     } else {
                         snake.angles = K.twist(start, joint, direction);
                         snake.setPose(snake.angles);
+                        showNotation();
                         isAnimating = false;
                         resolve();
                     }
