@@ -32,8 +32,8 @@ test('straight stick is the empty notation', () => {
 
 test('single turns', () => {
     const a = parseNotation('11L1');
-    assert.equal(a[jointOf(11, 'L')], 3);
-    assert.equal(parseNotation('11R1')[jointOf(11, 'R')], 1);
+    assert.equal(a[jointOf(11, 'L')], 1);
+    assert.equal(parseNotation('11R1')[jointOf(11, 'R')], 3);
     assert.equal(a.filter(x => x !== 0).length, 1);
     assert.equal(toNotation(a), '11L1');
     // Position 0 is the base position (used as "12R0" on the page).
@@ -81,6 +81,24 @@ test('snowflake is a closed flat shape across a space diagonal', () => {
     assert.ok(flat);
 });
 
+// Cobra from http://thomas-wolter.de/rubik_fansfriends_en.html. The shape is
+// chiral; this fixes which mirror image the notation means, checked by
+// rendering both and comparing with the picture on that page.
+const COBRA = '2L3-2R3-3L1-3R1-4L1-5L3-4R1-5R3-6L3-7L1-6R3-7R3-8L1-9L1-9R1-11L2-12R1';
+
+test('cobra has the handedness of its picture', () => {
+    const a = parseNotation(COBRA);
+    assert.ok(isValid(a));
+    const p = forwardKinematics(a).map(q => q.position);
+    const d = i => p[i].map((v, k) => v - p[0][k]);
+    const [u, v, w] = [d(8), d(16), d(23)];
+    const triple = u[0] * (v[1] * w[2] - v[2] * w[1])
+                 - u[1] * (v[0] * w[2] - v[2] * w[0])
+                 + u[2] * (v[0] * w[1] - v[1] * w[0]);
+    // The mirror image gives +15.
+    assert.equal(triple, -15);
+});
+
 test('writing sorts by wedge, left before right', () => {
     assert.equal(toNotation(parseNotation(CAT)), '2L2-2R2-3R2-4L2-5L3-6L2-6R2-7R2-8L2-9L2-9R2');
     assert.equal(toNotation(parseNotation(WOLF)), WOLF);
@@ -104,8 +122,8 @@ test('round trip for random angles', () => {
 });
 
 test('other snake lengths', () => {
-    assert.deepEqual(parseNotation('2L1-2R3', 4), [0, 3, 3]);
-    assert.equal(toNotation([0, 3, 3]), '2L1-2R3');
+    assert.deepEqual(parseNotation('2L1-2R3', 4), [0, 1, 1]);
+    assert.equal(toNotation([0, 1, 1]), '2L1-2R3');
     assert.throws(() => parseNotation('3R1', 4), /wedge must be 1..2/);
 });
 

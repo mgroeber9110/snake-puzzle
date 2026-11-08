@@ -37,9 +37,9 @@ wedge geometry (separating axis test on the triangular prisms). `isTwistFree(ang
 `src/notation.js` reads and writes shapes in the notation by Thomas Wolter
 (http://thomas-wolter.de/rubik_notation_en.html), e.g. `2R2-3L2-4L2-5R2-6R2-7L2-8L2-10L2-10R2-12R2` (Wolf):
 `parseNotation(text)` returns the joint angles, `toNotation(angles)` the notation string. Dark wedge `n` is model wedge
-`2(n-1)`, `nR` is joint `2n-2`, `nL` is joint `2n-3`, and position `p` is joint angle `p` on a right joint and `4-p` on a left joint
-(so the page's Ball and Snowflake examples come out as ball and flat snowflake). The page's text does not say
-which of the two mirror images position 1 is; `MIRROR` in `notation.js` flips it if needed.
+`2(n-1)`, `nR` is joint `2n-2`, `nL` is joint `2n-3`, and position `p` is joint angle `p` on a left joint and `4-p` on a right joint.
+This is checked against the shapes on the site: the Ball and Snowflake examples come out as ball and flat snowflake,
+and the Cobra matches its picture (not its mirror image).
 In `src/snake3.html` the current shape is shown in this notation, and a shape can be typed in and set with "Set Shape".
 
 `src/snake3.html` uses these modules for placing the segments and for collision checks, so it must be served together with

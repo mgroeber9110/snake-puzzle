@@ -18,23 +18,22 @@
 // wedge 2(n-1), and
 //   nR -> joint 2n-2 (between wedge 2n-2 and 2n-1),
 //   nL -> joint 2n-3 (between wedge 2n-3 and 2n-2).
-// Position p of a right joint is joint angle p, position p of a left joint is
+// Position p of a left joint is joint angle p, position p of a right joint is
 // joint angle 4 - p (mod 4): the bright wedges on both sides of a dark wedge
 // turn in the same sense as seen along the stick, which is the opposite sense
-// as seen from the dark wedge. Only this choice turns the Ball example into
-// the ball (3x3x3 block) and the Snowflake example into a flat hexagonal
-// shape; with the other one, the two come out swapped.
-// Which of the two mirror images is "position 1" cannot be read from the text
-// of the page (only from its photos). If it turns out to be the other one,
-// set MIRROR to true: every angle a then becomes 4 - a.
+// as seen from the dark wedge. This choice is fixed by two checks:
+//   - left vs. right: only with opposite signs does the Ball example become the
+//     ball (3x3x3 block) and the Snowflake a flat hexagonal ring; otherwise
+//     the two come out swapped.
+//   - the overall sign (which of two mirror images is meant): the picture of
+//     the Cobra (2L3-2R3-3L1-...-12R1) on the "fans & friends" page of the same
+//     site only matches this choice; the other one gives its mirror image.
 
 import { NUM_WEDGES } from './kinematics.js';
 
-const MIRROR = false;
-
 // Angle for a position on side 'L' or 'R'; the mapping is its own inverse.
 function toAngle(position, side) {
-    return (side === 'L') !== MIRROR ? (4 - position) % 4 : position;
+    return side === 'R' ? (4 - position) % 4 : position;
 }
 
 function toPosition(angle, side) {
