@@ -1,0 +1,21 @@
+[project]
+name = "rubiksnake"
+version = "0.1.0"
+description = "Training environment for the Rubik's Snake (see docs/training-environment.md)"
+requires-python = ">=3.10"
+dependencies = ["numpy", "gymnasium>=1.0", "mujoco>=3.2"]
+
+[project.optional-dependencies]
+train = ["sb3-contrib>=2.3", "torch"]
+test = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["rubiksnake"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,4 @@
+__pycache__/
+*.egg-info/
+sim/runs/*/model_depth*.zip
+.pytest_cache/
