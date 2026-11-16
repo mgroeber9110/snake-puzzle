@@ -29,6 +29,7 @@ class Physics:
     twist_time: float = 0.4        # s, the target ramps over this time
     time_limit: float = 0.8        # s, after this the move counts as blocked
     tolerance: float = 0.05        # rad, joint counts as arrived
+    max_drift: float = 0.785       # rad (45°); a move that pushes another joint further counts as blocked
     friction: float = 0.0          # sliding friction between wedges (0 = frictionless)
     shrink: float = 0.002          # wedges are scaled by (1 - shrink): avoids contacts of touching faces
     margin: float = 0.0

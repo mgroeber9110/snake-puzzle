@@ -1,0 +1,32 @@
+{
+ "wolf": {
+  "success": false,
+  "steps": 200,
+  "closest": 7,
+  "blocked": 63
+ },
+ "cat": {
+  "success": false,
+  "steps": 200,
+  "closest": 6,
+  "blocked": 37
+ },
+ "snowflake": {
+  "success": true,
+  "steps": 24,
+  "closest": 0,
+  "blocked": 1
+ },
+ "cobra": {
+  "success": true,
+  "steps": 18,
+  "closest": 0,
+  "blocked": 0
+ },
+ "ball": {
+  "success": false,
+  "steps": 200,
+  "closest": 3,
+  "blocked": 180
+ }
+}

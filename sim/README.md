@@ -50,3 +50,32 @@ moves free along the whole sweep, notation).
   4 moves complete in MuJoCo although the exact check finds a collision, 3 are blocked although free. About 6–7 ms per
   twist on one core; a free twist takes 0.45–0.6 s of simulated time.
 - The exact sweep port takes about 5 ms per twist.
+
+## First training run (stage 1, near shapes)
+
+`runs/stage1/` holds the model, the curriculum log, the evaluation (`eval.md`) and example trajectories in the
+exchange format of the draft. Run with `executor="mujoco"`, `ChainPolicy`, 4 environments on 4 cores.
+
+- **Curriculum:** targets 1..D completed random moves from the stick, D grows at 85 % success. D went from 1 to 30
+  (the cap) in about 21 minutes and 150k steps. Most of the time is spent learning depth 1; once the network has
+  learned to compare angles and targets per joint, every further step takes about a minute.
+- **Near shapes** (50 targets per depth, deterministic policy): 96–100 % success up to depth 30, random agent 0 %
+  beyond depth 1. Where A* finds the optimum within its budget, the policy needs the same number of moves
+  (ratio 1.0–1.06). A* solves only 4 % of the depth-30 targets within 5000 expansions, the policy all of them.
+- **Stages 2 and 3 without further training**, from the stick, 200 steps:
+
+  | Target | MuJoCo executor | Exact sweep check |
+  |---|---|---|
+  | Cobra | reached in 18 moves (optimal) | reached in 18 moves |
+  | Snowflake | reached in 23 moves (optimal) | reached in 24 moves, 1 blocked |
+  | Ball | reached in 23 moves (optimal) | stuck 3 moves away |
+  | Wolf | stuck 5 moves away | stuck 7 moves away |
+  | Cat | stuck 7 moves away | stuck 6 moves away |
+  | Generated flat shapes (6 half turns) | 28 % | – |
+
+**Caveats.** The Ball only works in MuJoCo: 4 of its 23 moves pass in MuJoCo although the exact check finds an
+overlap right at the start of the twist. MuJoCo lets them through by bending other joints by up to 0.78 rad, so the
+made-up servos are too soft for a snake without play. Tightening this with a drift limit alone did not help (it also
+blocks free moves, which bend joints through inertia); stiffer servos with a lower torque limit are the next thing to
+try. Half-turn shapes (Wolf, Cat, generated flat ones) are the real gap: random walks from the stick rarely need a
+joint at a half turn whose quarter-turn intermediate collides, so stage 2 needs its own training.

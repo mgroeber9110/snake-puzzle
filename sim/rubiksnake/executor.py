@@ -2,7 +2,8 @@
 
 `MujocoExecutor` runs the twist with simulated servos (section 3.2): the
 target of the joint ramps by 90 degrees, the simulation runs until the joint
-arrives or the time limit is hit, and a stall counts as blocked.
+arrives or the time limit is hit; a stall, or a twist that pushes another
+joint off by more than `max_drift`, counts as blocked.
 `KinematicExecutor` uses the exact sweep check (sweep.py). Both return a
 `TwistResult`; neither changes the integer state, the environment does.
 """
@@ -102,18 +103,24 @@ class MujocoExecutor:
         q_other = d.qpos[others].copy()
         steps_done = self.max_steps
         arrived = False
+        drift = 0.0
         for k in range(1, self.max_steps + 1):
             d.ctrl[joint] = start + (goal - start) * min(1.0, k / ramp)
             mj.mj_step(m, d)
+            if k % 5 == 0:
+                drift = max(drift, np.abs(d.qpos[others] - q_other).max(initial=0.0))
+                if drift > p.max_drift:
+                    break  # the twist only gets through by bending the rest of the snake
             if record is not None and k % 10 == 0:
                 record.append(d.qpos.copy())
             if k >= ramp and abs(d.qpos[joint] - goal) < p.tolerance and abs(d.qvel[joint]) < 1.0:
                 arrived = True
                 steps_done = k
                 break
-        # Other joints must not have been pushed off their quarter turn.
-        drift = np.abs(d.qpos[others] - q_other).max(initial=0.0)
-        done = arrived and drift < math.pi / 4
+        # Other joints must stay put: the servos are stiff and have no play, so
+        # a twist that only gets through by bending the rest of the snake is blocked.
+        drift = max(drift, np.abs(d.qpos[others] - q_other).max(initial=0.0))
+        done = arrived and drift <= p.max_drift
         if done and not is_valid(twist(angles, joint, direction)):
             done = False  # safety net, should not happen with masked actions
         m.geom_contype[:] = self.contype0
