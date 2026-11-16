@@ -18,6 +18,7 @@ from sb3_contrib import MaskablePPO
 from rubiksnake.env import RubikSnakeEnv
 from rubiksnake.notation import to_notation
 from rubiksnake.search import astar
+from rubiksnake.shapes import NAMED, named, random_flat_shape
 
 
 def max_steps_for(depth: int) -> int:
@@ -25,10 +26,11 @@ def max_steps_for(depth: int) -> int:
 
 
 def run_episode(env, policy, rng, seed, target=None):
+    """One episode; also tracks the closest the snake got to the target."""
     opts = {} if target is None else {"target": target}
     obs, _ = env.reset(seed=seed, options=opts)
     start, target = env.angles.copy(), env.target.copy()
-    moves, blocked = [], 0
+    moves, blocked, closest = [], 0, env.distance()
     while True:
         if policy is None:
             a = int(rng.choice(np.flatnonzero(env.action_masks())))
@@ -38,8 +40,10 @@ def run_episode(env, policy, rng, seed, target=None):
         obs, _, term, trunc, info = env.step(a)
         moves.append([a // 2, 1 - 2 * (a % 2)])
         blocked += info["blocked"]
+        closest = min(closest, info["distance"])
         if term or trunc:
-            return dict(success=bool(term), steps=len(moves), blocked=blocked,
+            return dict(success=bool(term), steps=len(moves), blocked=blocked, closest=closest,
+                        final=info["distance"],
                         start=start, target=target, moves=moves)
 
 
@@ -88,12 +92,35 @@ def main():
         row = {k: (round(float(v), 3) if isinstance(v, (float, np.floating)) else v) for k, v in row.items()}
         rows.append(row)
         print(json.dumps(row), flush=True)
-    (out / "eval.json").write_text(json.dumps(rows, indent=2))
+    # Stages 2 and 3, zero-shot: generated flat shapes and the named shapes, from the stick.
+    env = RubikSnakeEnv(executor=args.executor, max_steps=200)
+    flat = [run_episode(env, model, rng, 50_000 + k, random_flat_shape(np.random.default_rng(k)))
+            for k in range(args.episodes // 2)]
+    shape_rows = [{"shape": "generated flat (one layer, 6 half turns)",
+                   "success": round(float(np.mean([r["success"] for r in flat])), 3),
+                   "start_distance": None, "closest": round(float(np.mean([r["closest"] for r in flat])), 2),
+                   "steps": None, "blocked": round(float(np.mean([r["blocked"] for r in flat])), 1)}]
+    for name in NAMED:
+        r = run_episode(env, model, rng, 0, named(name))
+        traj = {"num_wedges": 24, "start": r["start"].tolist(), "moves": r["moves"],
+                "meta": {"policy": "ppo-stage1", "task": "reach_shape", "target": name,
+                         "success": r["success"]}}
+        (out / "trajectories" / f"{name}.json").write_text(json.dumps(traj))
+        env.reset(options={"target": named(name)})
+        shape_rows.append({"shape": name, "success": r["success"], "start_distance": env.distance(),
+                           "closest": r["closest"], "steps": r["steps"], "blocked": r["blocked"]})
+        print(json.dumps(shape_rows[-1]), flush=True)
+    (out / "eval.json").write_text(json.dumps({"depths": rows, "shapes": shape_rows}, indent=2))
     lines = ["| Depth | PPO success | Random success | PPO steps | A* steps | PPO / A* | Blocked per episode |",
              "|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append(f"| {r['depth']} | {r['ppo_success']:.0%} | {r['random_success']:.0%} | {r['ppo_steps']} | "
                      f"{r['astar_steps']} | {r['steps_over_optimal']} | {r['blocked_per_episode']} |")
+    lines += ["", "| Target from the stick | Success | Start distance | Closest distance | Steps | Blocked moves |",
+              "|---|---|---|---|---|---|"]
+    for r in shape_rows:
+        lines.append(f"| {r['shape']} | {r['success']} | {r['start_distance']} | {r['closest']} | "
+                     f"{r['steps']} | {r['blocked']} |")
     (out / "eval.md").write_text("\n".join(lines) + "\n")
 
 

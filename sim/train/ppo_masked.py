@@ -17,12 +17,14 @@ import json
 import time
 from pathlib import Path
 
+import torch
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from rubiksnake.env import RubikSnakeEnv
+from rubiksnake.policy import ChainPolicy
 
 
 def max_steps_for(depth: int) -> int:
@@ -78,16 +80,18 @@ def main():
     ap.add_argument("--max-depth", type=int, default=16)
     ap.add_argument("--out", default="runs/stage1")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--torch-threads", type=int, default=1,
+                    help="the env processes need the cores; more torch threads slow the rollouts down")
     args = ap.parse_args()
+    torch.set_num_threads(args.torch_threads)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
     env = make_vec_env(RubikSnakeEnv, n_envs=args.envs, seed=args.seed, vec_env_cls=SubprocVecEnv,
                        env_kwargs={"executor": args.executor, "target_depth": (1, 1),
                                    "max_steps": max_steps_for(1)})
-    model = MaskablePPO("MultiInputPolicy", env, n_steps=512, batch_size=256, n_epochs=4,
-                        learning_rate=3e-4, gamma=0.99, ent_coef=0.01, seed=args.seed,
-                        policy_kwargs={"net_arch": [256, 256]}, verbose=0)
+    model = MaskablePPO(ChainPolicy, env, n_steps=512, batch_size=256, n_epochs=4,
+                        learning_rate=3e-4, gamma=0.99, ent_coef=0.01, seed=args.seed, verbose=0)
     cb = Curriculum(out / "curriculum.csv", max_depth=args.max_depth)
     t = time.time()
     model.learn(total_timesteps=args.steps, callback=cb)

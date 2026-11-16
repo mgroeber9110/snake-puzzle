@@ -77,6 +77,10 @@ class RubikSnakeEnv(gym.Env):
             "target": spaces.MultiDiscrete([4] * n),
             "action_mask": spaces.MultiBinary(2 * n),
         }
+        # Moves tried in the current state and blocked on the way; cleared
+        # when the state changes. Without it a policy without memory would
+        # repeat a blocked move forever.
+        obs["blocked"] = spaces.MultiBinary(2 * n)
         if delta:
             # (target - angles) mod 4: redundant, but saves the network from
             # learning 23 comparisons of one-hot codes.
@@ -120,7 +124,7 @@ class RubikSnakeEnv(gym.Env):
 
     def _obs(self):
         o = {"angles": self.angles.copy(), "target": self.target.copy(),
-             "action_mask": self._mask.astype(np.int8)}
+             "action_mask": self._mask.astype(np.int8), "blocked": self._blocked.astype(np.int8)}
         if self.delta:
             o["delta"] = (self.target - self.angles) % 4
         if self.geometry:
@@ -156,6 +160,7 @@ class RubikSnakeEnv(gym.Env):
             else max(4 * self.curriculum_depth, 20)
         self.steps = 0
         self._mask = valid_move_mask(self.angles)
+        self._blocked = np.zeros(2 * self.num_joints, dtype=bool)
         return self._obs(), {"distance": self.distance()}
 
     def step(self, action):
@@ -173,7 +178,9 @@ class RubikSnakeEnv(gym.Env):
             if result is None or result.done:
                 self.angles = twist(self.angles, joint, direction)
                 self._mask = valid_move_mask(self.angles)
+                self._blocked[:] = False
             else:
+                self._blocked[action] = True
                 info["blocked"] = True
                 reward += BLOCKED_PENALTY
             if result is not None:
