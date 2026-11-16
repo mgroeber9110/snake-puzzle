@@ -112,3 +112,27 @@ runs/stage2/model_final.zip`, results in `runs/stage2/eval.md`.
 - Ball: stuck 2 moves away (1 when sampling). It is the open problem for stage 3: only one move leads out of the
   finished Ball (joint 20), so the last moves have to come in one particular order. A* from the Ball back to the stick
   did not finish within 60000 expansions, so whether the Ball is reachable with sharp edges is still open.
+
+## Stage 3 (Cobra and Ball)
+
+**The Ball can be reached with sharp edges.** Asked to *unfold* the Ball (start at the Ball, target the stick, actions
+sampled), the stage-2 policy gets to the stick in 25 moves. Every twist is reversible, so the path read backwards
+builds the Ball; it passes the exact check and MuJoCo (`runs/stage2/trajectories/ball_reversed_unfolding.json`). 23
+joints are turned, and joint 20 has to go the long way round (three quarter turns instead of one), which makes 25.
+
+**Reverse curriculum along unfolding paths.** `train/make_unfold_bank.py` collects such paths (33 for the Ball, 40
+each for Cobra and Snowflake, `runs/stage3/bank.json`). In training, 60 % of the episodes target one of the three
+shapes and start up to N states along one of its paths; N grows from 2 to 26 at 90 % success, so at the end the
+episodes start at the stick. The other 40 % are the stage-2 targets.
+
+**Run.** `runs/stage3/`: continued from the stage-2 model, 310k steps, 53 minutes
+(`--target-kind mixed --start-depth 14 --named ball,cobra,snowflake --bank runs/stage3/bank.json --max-depth 26
+--init runs/stage2/model_final.zip --lr 1e-4`). N reached 26 after 45 minutes. Results in `runs/stage3/eval.md`:
+
+- From the stick, with the most likely action and with sampled actions, in MuJoCo and under the exact check alike:
+  Ball in 25 moves, Snowflake in 23 (the minimum; stage 2 needed 26), Cobra in 18 (the minimum), no blocked tries.
+- The generated targets got a little worse: flat shapes 86-100 % with the most likely action (stage 2: 100 %), near
+  shapes at depth 20-30 88 % (stage 2: 92-94 %); with sampled actions 90-100 %. The three named shapes took 60 % of
+  the episodes, a smaller share should fix this.
+- The policy was shown these three shapes in training. How well it builds a compact 3D shape it has never seen is
+  not measured yet.

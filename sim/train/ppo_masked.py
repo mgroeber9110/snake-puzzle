@@ -46,6 +46,9 @@ class Curriculum(BaseCallback):
         self.rows = []
 
     def _apply(self):
+        if self.kind == "named":  # stage 3: depth = how far along an unfolding path episodes start
+            self.training_env.env_method("set_curriculum_depth", self.depth)
+            return
         self.training_env.env_method("set_target_depth", (1, self.depth))
         self.training_env.env_method("set_max_steps", max_steps_for(self.depth, self.kind))
 
@@ -54,7 +57,7 @@ class Curriculum(BaseCallback):
 
     def _on_step(self) -> bool:
         for done, info in zip(self.locals["dones"], self.locals["infos"]):
-            if done:
+            if done and (self.kind != "named" or info.get("named")):
                 self.recent.append(bool(info.get("success")))
         if len(self.recent) == self.window:
             rate = sum(self.recent) / self.window
@@ -88,6 +91,12 @@ def main():
     ap.add_argument("--start-depth", type=int, default=1)
     ap.add_argument("--init", help="continue from this model instead of a fresh network")
     ap.add_argument("--lr", type=float, default=3e-4)
+    ap.add_argument("--named", help="stage 3: comma-separated named shapes mixed into the targets; the "
+                    "curriculum depth then counts moves along the paths in --bank, the generated "
+                    "targets keep --start-depth")
+    ap.add_argument("--bank", help="paths from make_unfold_bank.py")
+    ap.add_argument("--named-share", type=float, default=0.6)
+    ap.add_argument("--named-start", type=int, default=2)
     ap.add_argument("--torch-threads", type=int, default=1,
                     help="the env processes need the cores; more torch threads slow the rollouts down")
     args = ap.parse_args()
@@ -95,17 +104,29 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
+    env_kwargs = {"executor": args.executor, "target_depth": (1, args.start_depth),
+                  "target_kind": args.target_kind,
+                  "max_steps": max_steps_for(args.start_depth, args.target_kind)}
+    if args.named:
+        from rubiksnake.shapes import named
+        names = args.named.split(",")
+        bank = json.load(open(args.bank))
+        env_kwargs.update(named_targets={n: named(n).tolist() for n in names},
+                          start_bank={n: bank[n] for n in names}, named_share=args.named_share,
+                          curriculum_depth=args.named_start)
     env = make_vec_env(RubikSnakeEnv, n_envs=args.envs, seed=args.seed, vec_env_cls=SubprocVecEnv,
-                       env_kwargs={"executor": args.executor, "target_depth": (1, args.start_depth),
-                                   "target_kind": args.target_kind,
-                                   "max_steps": max_steps_for(args.start_depth, args.target_kind)})
+                       env_kwargs=env_kwargs)
     if args.init:
         model = MaskablePPO.load(args.init, env=env, learning_rate=args.lr, seed=args.seed)
     else:
         model = MaskablePPO(ChainPolicy, env, n_steps=512, batch_size=256, n_epochs=4,
                             learning_rate=args.lr, gamma=0.99, ent_coef=0.01, seed=args.seed, verbose=0)
-    cb = Curriculum(out / "curriculum.csv", start_depth=args.start_depth, max_depth=args.max_depth,
-                    kind=args.target_kind)
+    if args.named:
+        cb = Curriculum(out / "curriculum.csv", start_depth=args.named_start, max_depth=args.max_depth,
+                        kind="named", threshold=0.9)
+    else:
+        cb = Curriculum(out / "curriculum.csv", start_depth=args.start_depth, max_depth=args.max_depth,
+                        kind=args.target_kind)
     t = time.time()
     model.learn(total_timesteps=args.steps, callback=cb)
     model.save(out / "model_final")

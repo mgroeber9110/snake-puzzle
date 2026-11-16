@@ -55,7 +55,9 @@ class RubikSnakeEnv(gym.Env):
                  physics=None, max_steps: int = 200, curriculum_depth: int | None = None,
                  target_depth: int | tuple[int, int] = 4, start=None, gamma: float = 0.99,
                  geometry: bool = False, delta: bool = True,
-                 target_kind: str = "near", near_share: float = 0.25):
+                 target_kind: str = "near", near_share: float = 0.25,
+                 named_targets: dict | None = None, start_bank: dict | None = None,
+                 named_share: float = 0.5):
         if task != "reach_shape":
             raise NotImplementedError("only task='reach_shape' is implemented so far")
         self.num_wedges = num_wedges
@@ -72,6 +74,15 @@ class RubikSnakeEnv(gym.Env):
             raise ValueError(f"unknown target_kind {target_kind!r}")
         self.target_kind = target_kind
         self.near_share = near_share
+        # Stage 3: named shapes mixed into the generated targets. `start_bank`
+        # maps a name to paths (lists of states) leading from the shape towards
+        # the stick; with `curriculum_depth=N` an episode for that shape starts
+        # up to N states along such a path instead of at the stick.
+        self.named_targets = {k: np.asarray(v, dtype=np.int64) for k, v in (named_targets or {}).items()}
+        self.start_bank = {k: [np.asarray(path, dtype=np.int64) for path in v]
+                           for k, v in (start_bank or {}).items()}
+        self.named_share = named_share
+        self.episode_name = None
         if targets is None or callable(targets):
             self.targets = targets
         else:
@@ -160,6 +171,9 @@ class RubikSnakeEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         options = options or {}
+        self.episode_name = None
+        if self.named_targets and "target" not in options and self.np_random.random() < self.named_share:
+            return self._reset_named()
         for _ in range(100):
             self.target = np.asarray(options.get("target", self._draw_target()), dtype=np.int64)
             if "start" in options:
@@ -170,8 +184,29 @@ class RubikSnakeEnv(gym.Env):
                 self.angles = straight(self.num_wedges) if self.start is None else self.start.copy()
             if not self.is_success() or "target" in options:
                 break
-        self.max_steps = self.max_steps_default if self.curriculum_depth is None \
+        self.max_steps = self.max_steps_default if self.curriculum_depth is None or self.named_targets \
             else max(4 * self.curriculum_depth, 20)
+        return self._begin()
+
+    def _reset_named(self):
+        names = sorted(self.named_targets)
+        name = names[int(self.np_random.integers(len(names)))]
+        self.episode_name = name
+        self.target = self.named_targets[name].copy()
+        paths = self.start_bank.get(name)
+        if paths and self.curriculum_depth is not None:
+            path = paths[int(self.np_random.integers(len(paths)))]
+            last = min(self.curriculum_depth, len(path) - 1)
+            # half of the episodes at the frontier, the rest anywhere closer to the target
+            k = last if self.np_random.random() < 0.5 else int(self.np_random.integers(1, last + 1))
+            self.angles = path[k].copy()
+            self.max_steps = 3 * k + 20
+        else:
+            self.angles = straight(self.num_wedges)
+            self.max_steps = self.max_steps_default
+        return self._begin()
+
+    def _begin(self):
         self.steps = 0
         self._mask = valid_move_mask(self.angles)
         self._blocked = np.zeros(2 * self.num_joints, dtype=bool)
@@ -203,6 +238,6 @@ class RubikSnakeEnv(gym.Env):
         reward += self.gamma * self._potential(self.angles) - phi
         if success:
             reward += SUCCESS_REWARD
-        info.update(distance=self.distance(), success=success)
+        info.update(distance=self.distance(), success=success, named=self.episode_name)
         truncated = not success and self.steps >= self.max_steps
         return self._obs(), float(reward), success, truncated, info

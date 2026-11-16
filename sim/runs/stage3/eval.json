@@ -1,0 +1,267 @@
+{
+  "generated": [
+    {
+      "targets": "flat, depth 2",
+      "episodes": 50,
+      "mean_distance": 4.0,
+      "success_deterministic": 1.0,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.0,
+      "blocked_per_episode": 0.0
+    },
+    {
+      "targets": "flat, depth 4",
+      "episodes": 50,
+      "mean_distance": 6.7,
+      "success_deterministic": 0.96,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.0,
+      "blocked_per_episode": 0.0
+    },
+    {
+      "targets": "flat, depth 8",
+      "episodes": 50,
+      "mean_distance": 9.9,
+      "success_deterministic": 0.96,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.02,
+      "blocked_per_episode": 0.1
+    },
+    {
+      "targets": "flat, depth 12",
+      "episodes": 50,
+      "mean_distance": 12.1,
+      "success_deterministic": 0.86,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.01,
+      "blocked_per_episode": 0.78
+    },
+    {
+      "targets": "flat, depth 14",
+      "episodes": 50,
+      "mean_distance": 12.1,
+      "success_deterministic": 0.92,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.0,
+      "blocked_per_episode": 0.92
+    },
+    {
+      "targets": "near, depth 4",
+      "episodes": 50,
+      "mean_distance": 3.8,
+      "success_deterministic": 1.0,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.0,
+      "blocked_per_episode": 0.0
+    },
+    {
+      "targets": "near, depth 10",
+      "episodes": 50,
+      "mean_distance": 8.2,
+      "success_deterministic": 1.0,
+      "success_sampled": 1.0,
+      "steps_per_distance": 1.0,
+      "blocked_per_episode": 0.02
+    },
+    {
+      "targets": "near, depth 20",
+      "episodes": 50,
+      "mean_distance": 13.5,
+      "success_deterministic": 0.88,
+      "success_sampled": 0.98,
+      "steps_per_distance": 1.01,
+      "blocked_per_episode": 4.78
+    },
+    {
+      "targets": "near, depth 30",
+      "episodes": 50,
+      "mean_distance": 16.1,
+      "success_deterministic": 0.88,
+      "success_sampled": 0.9,
+      "steps_per_distance": 1.02,
+      "blocked_per_episode": 8.52
+    }
+  ],
+  "shapes": [
+    {
+      "shape": "wolf",
+      "executor": "mujoco",
+      "deterministic": {
+        "success": false,
+        "steps": 200,
+        "blocked": 1,
+        "distance": 20,
+        "closest": 12
+      },
+      "sampled": {
+        "success": false,
+        "steps": 200,
+        "blocked": 2,
+        "distance": 20,
+        "closest": 3
+      }
+    },
+    {
+      "shape": "wolf",
+      "executor": "kinematic",
+      "deterministic": {
+        "success": false,
+        "steps": 200,
+        "blocked": 0,
+        "distance": 20,
+        "closest": 13
+      },
+      "sampled": {
+        "success": false,
+        "steps": 200,
+        "blocked": 2,
+        "distance": 20,
+        "closest": 3
+      }
+    },
+    {
+      "shape": "cat",
+      "executor": "mujoco",
+      "deterministic": {
+        "success": false,
+        "steps": 200,
+        "blocked": 1,
+        "distance": 21,
+        "closest": 13
+      },
+      "sampled": {
+        "success": false,
+        "steps": 200,
+        "blocked": 20,
+        "distance": 21,
+        "closest": 5
+      }
+    },
+    {
+      "shape": "cat",
+      "executor": "kinematic",
+      "deterministic": {
+        "success": false,
+        "steps": 200,
+        "blocked": 0,
+        "distance": 21,
+        "closest": 13
+      },
+      "sampled": {
+        "success": false,
+        "steps": 200,
+        "blocked": 8,
+        "distance": 21,
+        "closest": 5
+      }
+    },
+    {
+      "shape": "snowflake",
+      "executor": "mujoco",
+      "deterministic": {
+        "success": true,
+        "steps": 23,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      },
+      "sampled": {
+        "success": true,
+        "steps": 23,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      }
+    },
+    {
+      "shape": "snowflake",
+      "executor": "kinematic",
+      "deterministic": {
+        "success": true,
+        "steps": 23,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      },
+      "sampled": {
+        "success": true,
+        "steps": 23,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      }
+    },
+    {
+      "shape": "cobra",
+      "executor": "mujoco",
+      "deterministic": {
+        "success": true,
+        "steps": 18,
+        "blocked": 0,
+        "distance": 18,
+        "closest": 0
+      },
+      "sampled": {
+        "success": true,
+        "steps": 18,
+        "blocked": 0,
+        "distance": 18,
+        "closest": 0
+      }
+    },
+    {
+      "shape": "cobra",
+      "executor": "kinematic",
+      "deterministic": {
+        "success": true,
+        "steps": 18,
+        "blocked": 0,
+        "distance": 18,
+        "closest": 0
+      },
+      "sampled": {
+        "success": true,
+        "steps": 18,
+        "blocked": 0,
+        "distance": 18,
+        "closest": 0
+      }
+    },
+    {
+      "shape": "ball",
+      "executor": "mujoco",
+      "deterministic": {
+        "success": true,
+        "steps": 25,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      },
+      "sampled": {
+        "success": true,
+        "steps": 25,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      }
+    },
+    {
+      "shape": "ball",
+      "executor": "kinematic",
+      "deterministic": {
+        "success": true,
+        "steps": 25,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      },
+      "sampled": {
+        "success": true,
+        "steps": 25,
+        "blocked": 0,
+        "distance": 23,
+        "closest": 0
+      }
+    }
+  ]
+}
