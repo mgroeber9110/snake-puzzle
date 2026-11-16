@@ -2,3 +2,4 @@ __pycache__/
 *.egg-info/
 sim/runs/*/model_depth*.zip
 .pytest_cache/
+sim/runs/*/model_latest.zip

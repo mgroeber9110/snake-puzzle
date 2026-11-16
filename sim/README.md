@@ -46,9 +46,14 @@ moves free along the whole sweep, notation).
 
 ## Measured
 
-- MuJoCo against the exact sweep (`sweep.js`) on the 303 end-state-valid moves of the test vectors: 296 agree (97.7 %);
-  4 moves complete in MuJoCo although the exact check finds a collision, 3 are blocked although free. About 6–7 ms per
-  twist on one core; a free twist takes 0.45–0.6 s of simulated time.
+- MuJoCo against the exact sweep (`sweep.js`) on 1046 end-state-valid moves (test vectors, the Ball path, random
+  walks of 10-60 moves, flat shapes): 1043 agree (99.7 %); 3 moves complete in MuJoCo although the exact check finds
+  a collision, none is blocked although free. About 6 ms per twist on one core; a free twist takes 0.47-0.68 s of
+  simulated time.
+- This needed stiff servos: every joint that is not being twisted is held by a stiff spring (`hold_stiffness`), a
+  twist that still pushes another joint by more than 0.05 rad counts as blocked, and the torque limit went up to 40 so
+  the motor can turn 23 rigid wedges in time. With the first, soft servos (the stage-1 run) only 94.3 % of this set
+  agreed, and 49 moves squeezed through by bending the rest of the snake.
 - The exact sweep port takes about 5 ms per twist.
 
 ## First training run (stage 1, near shapes)
@@ -73,9 +78,37 @@ exchange format of the draft. Run with `executor="mujoco"`, `ChainPolicy`, 4 env
   | Cat | stuck 7 moves away | stuck 6 moves away |
   | Generated flat shapes (6 half turns) | 28 % | – |
 
-**Caveats.** The Ball only works in MuJoCo: 4 of its 23 moves pass in MuJoCo although the exact check finds an
+**Caveats (fixed in stage 2 below).** The Ball only works in MuJoCo: 4 of its 23 moves pass in MuJoCo although the exact check finds an
 overlap right at the start of the twist. MuJoCo lets them through by bending other joints by up to 0.78 rad, so the
 made-up servos are too soft for a snake without play. Tightening this with a drift limit alone did not help (it also
 blocks free moves, which bend joints through inertia); stiffer servos with a lower torque limit are the next thing to
 try. Half-turn shapes (Wolf, Cat, generated flat ones) are the real gap: random walks from the stick rarely need a
 joint at a half turn whose quarter-turn intermediate collides, so stage 2 needs its own training.
+
+## Stage 2 (flat shapes)
+
+**What can be reached at all.** With sharp-edged wedges and no play, two neighbouring half turns between straight
+joints (`0,2,2,0`) cannot be reached: the last quarter turn is always blocked on the way, because a joint at a half
+turn blocks its neighbours (corners overlap by about 0.15 cells). A breadth-first search over all states of a 6-wedge
+and an 8-wedge snake with the exact check confirms it (912 of 920 and 12304 of 12585 valid states are reachable), and
+what is unreachable for a piece of the snake is unreachable for the whole snake. The Wolf has this pattern three times
+and the Cat as well, so neither can be reached in this model. With a clearance of 0.15 cells in the exact check all
+920 states of the 6-wedge snake become reachable. Snowflake, Cobra and Ball contain no such pattern.
+
+**Targets.** `target_kind="flat"` builds flat shapes by random half turns from the stick, each carried out by the
+executor, so they are reachable by construction and lie in one lattice layer. `"mixed"` adds 25 % near shapes.
+
+**Run.** `runs/stage2/`: the stage-1 model trained on with the stiff servos and mixed targets
+(`--target-kind mixed --start-depth 4 --max-depth 14 --init runs/stage1/model_final.zip --lr 1e-4`), stopped after
+67k steps (12 minutes) once 14 half turns had stayed at 99-100 %. Evaluation: `python train/evaluate_stage2.py
+runs/stage2/model_final.zip`, results in `runs/stage2/eval.md`.
+
+- Generated flat shapes up to 14 half turns: 100 %, in the minimum number of moves.
+- Near shapes up to depth 30: 92-100 % with the most likely action, 100 % when actions are sampled. The failures of
+  the deterministic policy are loops between a few states; sampling breaks them.
+- Snowflake: reached in 26 moves (3 blocked tries), Cobra in 18, in MuJoCo and under the exact check alike.
+- Wolf and Cat: the policy gets within 3 and 5 moves, which is as close as the model allows for the Wolf (one joint
+  of each of its three neighbouring pairs stays off).
+- Ball: stuck 2 moves away (1 when sampling). It is the open problem for stage 3: only one move leads out of the
+  finished Ball (joint 20), so the last moves have to come in one particular order. A* from the Ball back to the stick
+  did not finish within 60000 expansions, so whether the Ball is reachable with sharp edges is still open.

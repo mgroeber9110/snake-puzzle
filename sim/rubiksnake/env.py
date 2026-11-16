@@ -15,7 +15,7 @@ from gymnasium import spaces
 
 from .kinematics import forward_kinematics, straight, twist, valid_move_mask
 from .notation import parse_notation
-from .shapes import near_shape, random_walk
+from .shapes import flat_walk, near_shape, random_walk
 
 STEP_PENALTY = -0.01
 SUCCESS_REWARD = 1.0
@@ -38,8 +38,10 @@ def make_executor(kind: str, num_wedges: int, physics=None):
 class RubikSnakeEnv(gym.Env):
     """Goal-conditioned shape reaching.
 
-    targets: None for stage-1 near shapes (`target_depth` random moves from the
-        stick), or a sequence of angle arrays / Wolter strings, or a callable
+    targets: None for generated targets: `target_kind="near"` (stage 1,
+        `target_depth` random moves from the stick), `"flat"` (stage 2,
+        `target_depth` random half turns from the stick, all in one lattice
+        layer) or `"mixed"`; or a sequence of angle arrays / Wolter strings, or a callable
         rng -> angles.
     curriculum_depth: if set, an episode starts this many random completed
         moves away from the target (reverse curriculum); otherwise at `start`
@@ -52,7 +54,8 @@ class RubikSnakeEnv(gym.Env):
                  targets: Sequence | Callable | None = None, executor: str = "mujoco",
                  physics=None, max_steps: int = 200, curriculum_depth: int | None = None,
                  target_depth: int | tuple[int, int] = 4, start=None, gamma: float = 0.99,
-                 geometry: bool = False, delta: bool = True):
+                 geometry: bool = False, delta: bool = True,
+                 target_kind: str = "near", near_share: float = 0.25):
         if task != "reach_shape":
             raise NotImplementedError("only task='reach_shape' is implemented so far")
         self.num_wedges = num_wedges
@@ -65,6 +68,10 @@ class RubikSnakeEnv(gym.Env):
         self.gamma = gamma
         self.geometry = geometry
         self.delta = delta
+        if target_kind not in ("near", "flat", "mixed"):
+            raise ValueError(f"unknown target_kind {target_kind!r}")
+        self.target_kind = target_kind
+        self.near_share = near_share
         if targets is None or callable(targets):
             self.targets = targets
         else:
@@ -137,6 +144,13 @@ class RubikSnakeEnv(gym.Env):
         if self.targets is None:
             d = self.target_depth
             depth = int(self.np_random.integers(d[0], d[1] + 1)) if isinstance(d, tuple) else int(d)
+            kind = self.target_kind
+            if kind == "mixed":  # mostly flat shapes, some near shapes so stage 1 is not forgotten
+                kind = "near" if self.np_random.random() < self.near_share else "flat"
+            if kind == "flat":   # stage 2: `depth` half turns from the stick
+                return flat_walk(self.np_random, depth, self.num_wedges, self.executor)
+            if self.target_kind == "mixed":
+                depth = min(2 * depth, 30)
             return near_shape(self.np_random, depth, self.num_wedges, self.executor)
         if callable(self.targets):
             return np.asarray(self.targets(self.np_random), dtype=np.int64)

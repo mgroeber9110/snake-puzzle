@@ -25,13 +25,15 @@ class Physics:
     kp: float = 200.0              # position gain per rad
     kv: float = 10.0               # damping of the actuator per rad/s
     armature: float = 0.01         # reflected rotor inertia of each servo
-    torque_limit: float = 10.0     # turns the longer half of a stick within about 0.5 s
+    torque_limit: float = 40.0     # turns the longer half of a stick within about 0.5 s
     twist_time: float = 0.4        # s, the target ramps over this time
     time_limit: float = 0.8        # s, after this the move counts as blocked
     tolerance: float = 0.05        # rad, joint counts as arrived
-    max_drift: float = 0.785       # rad (45°); a move that pushes another joint further counts as blocked
+    hold_stiffness: float = 1e5    # extra spring holding the joints that are not being twisted
+    hold_damping: float = 80.0
+    max_drift: float = 0.05        # rad; a move that pushes another joint further counts as blocked
     friction: float = 0.0          # sliding friction between wedges (0 = frictionless)
-    shrink: float = 0.002          # wedges are scaled by (1 - shrink): avoids contacts of touching faces
+    shrink: float = 0.002          # every wedge face is moved inward by this much: avoids contacts of touching faces
     margin: float = 0.0
     solref: tuple = (0.005, 1.0)  # stiff contacts (time constant, damping ratio)
 
@@ -42,9 +44,22 @@ def _quat(m: np.ndarray) -> str:
     return " ".join(f"{x:.12g}" for x in q)
 
 
+def inset_wedge(clearance: float) -> np.ndarray:
+    """Vertices of the wedge with every face moved inward by `clearance`.
+
+    Scaling about the cell centre would not do: the sloped face passes through
+    the centre and would stay where it is.
+    """
+    h = 0.5 - clearance
+    lo = -h                                  # entry face y = -h and exit face z = -h
+    top = -clearance * np.sqrt(2.0) + h      # slope y + z = -c*sqrt(2), at z = -h (and y = -h)
+    return np.array([[-h, lo, top], [h, lo, top], [h, lo, lo],
+                     [-h, lo, lo], [-h, top, lo], [h, top, lo]])
+
+
 def build_mjcf(num_wedges: int = 24, physics: Physics | None = None) -> str:
     p = physics or Physics()
-    verts = " ".join(f"{x:.6g}" for x in (WEDGE_VERTS * (1 - p.shrink)).ravel())
+    verts = " ".join(f"{x:.6g}" for x in inset_wedge(p.shrink).ravel())
     condim = 3 if p.friction > 0 else 1
     base_quat = _quat(JOINT_BASE)
     body = []

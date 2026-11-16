@@ -82,3 +82,36 @@ def test_named_shapes_and_flat_layers():
     assert not is_flat_in_layer(named("snowflake"))  # flat in a diagonal plane only
     assert is_flat_in_layer(random_flat_shape(np.random.default_rng(0)))
     assert set(NAMED) == {"wolf", "cat", "snowflake", "cobra", "ball"}
+
+
+def test_flat_walk_targets_are_flat_and_reachable_by_construction():
+    from rubiksnake.executor import KinematicExecutor
+    from rubiksnake.shapes import flat_walk
+    ex = KinematicExecutor()
+    for seed in range(5):
+        target = flat_walk(np.random.default_rng(seed), 6, executor=ex)
+        assert is_flat_in_layer(target) and set(target.tolist()) <= {0, 2}
+        # two neighbouring half turns between straight joints never come out of the walk
+        s = "".join(map(str, target.tolist()))
+        assert "0220" not in s
+
+
+def test_neighbouring_half_turns_are_blocked_with_sharp_edges():
+    # ...,0,2,1,0 -> ...,0,2,2,0: the last quarter turn is blocked on the way in the
+    # exact check and in MuJoCo. This is why the Wolf and the Cat cannot be reached.
+    from rubiksnake.executor import MujocoExecutor
+    s = straight()
+    s[10], s[11] = 2, 1
+    assert valid_move_mask(s)[2 * 11]
+    assert not is_twist_free(s, 11, 1)
+    assert not MujocoExecutor().execute(s, 11, 1).done
+    # with 0.15 cells of clearance the twist goes through
+    assert is_twist_free(s, 11, 1, tolerance=0.15)
+
+
+def test_inset_wedge_moves_every_face_inward():
+    from rubiksnake.mjcf import inset_wedge
+    v = inset_wedge(0.01)
+    assert np.allclose(np.abs(v[:, 0]), 0.49)
+    assert np.isclose(v[:, 1].min(), -0.49) and np.isclose(v[:, 2].min(), -0.49)
+    assert np.isclose((v[:, 1] + v[:, 2]).max(), -0.01 * np.sqrt(2))

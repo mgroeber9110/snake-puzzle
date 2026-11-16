@@ -95,6 +95,13 @@ class MujocoExecutor:
         m.geom_contype[joint + 1:] = 1
         m.geom_conaffinity[joint + 1:] = 0
         self._set_state(angles)
+        if p.hold_stiffness > 0:
+            # Stiff servos without play: every other joint is held at its angle.
+            m.jnt_stiffness[:] = p.hold_stiffness
+            m.dof_damping[:] = p.hold_damping
+            m.jnt_stiffness[joint] = 0
+            m.dof_damping[joint] = 0
+            m.qpos_spring[:] = d.qpos
         start = d.qpos[joint]
         goal = start + direction * math.pi / 2
         ramp = max(1, int(round(p.twist_time / p.timestep)))

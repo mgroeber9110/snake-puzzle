@@ -1,0 +1,15 @@
+{"timesteps": 3008, "minutes": 0.4, "depth": 4, "success_rate": 0.996}
+{"timesteps": 6276, "minutes": 0.8, "depth": 5, "success_rate": 0.994}
+{"timesteps": 9968, "minutes": 1.2, "depth": 6, "success_rate": 0.994}
+{"timesteps": 13688, "minutes": 1.8, "depth": 7, "success_rate": 1.0}
+{"timesteps": 17760, "minutes": 2.4, "depth": 8, "success_rate": 0.998}
+{"timesteps": 21988, "minutes": 3.2, "depth": 9, "success_rate": 0.998}
+{"timesteps": 26516, "minutes": 3.9, "depth": 10, "success_rate": 0.998}
+{"timesteps": 31016, "minutes": 4.8, "depth": 11, "success_rate": 0.998}
+{"timesteps": 35732, "minutes": 5.7, "depth": 12, "success_rate": 1.0}
+{"timesteps": 40868, "minutes": 6.6, "depth": 13, "success_rate": 0.998}
+{"timesteps": 46104, "minutes": 7.7, "depth": 14, "success_rate": 0.994}
+{"timesteps": 51684, "minutes": 8.8, "depth": 14, "success_rate": 0.994}
+{"timesteps": 56836, "minutes": 9.7, "depth": 14, "success_rate": 1.0}
+{"timesteps": 61800, "minutes": 10.7, "depth": 14, "success_rate": 0.998}
+{"timesteps": 67096, "minutes": 11.6, "depth": 14, "success_rate": 0.994}

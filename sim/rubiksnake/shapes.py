@@ -43,6 +43,33 @@ def near_shape(rng, depth: int, num_wedges: int = 24, executor=None) -> np.ndarr
     return random_walk(rng, straight(num_wedges), depth, executor)
 
 
+def flat_walk(rng, half_turns: int, num_wedges: int = 24, executor=None) -> np.ndarray:
+    """Stage 2: a flat shape made by `half_turns` random half turns from the stick.
+
+    Each half turn is two quarter turns in the same direction, both with a
+    valid end state and completed by the executor, so the shape is reachable
+    by construction. A joint already at a half turn may be turned back.
+    """
+    angles = straight(num_wedges)
+    n = num_wedges - 1
+    for _ in range(half_turns):
+        for _try in range(4 * n):
+            joint = int(rng.integers(n))
+            direction = 1 if rng.random() < 0.5 else -1
+            a = angles
+            ok = True
+            for _q in range(2):
+                if not valid_move_mask(a)[2 * joint + (0 if direction == 1 else 1)] or \
+                        (executor is not None and not executor.execute(a, joint, direction).done):
+                    ok = False
+                    break
+                a = twist(a, joint, direction)
+            if ok:
+                angles = a
+                break
+    return angles
+
+
 def is_flat_in_layer(angles) -> bool:
     """All wedge cells in one lattice layer (like the straight stick)."""
     cells, _ = forward_kinematics(angles)
