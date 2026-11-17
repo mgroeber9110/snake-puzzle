@@ -1,0 +1,26 @@
+[
+ {
+  "file": "ball.json",
+  "label": "Ball (stage 3 network, 25 moves)"
+ },
+ {
+  "file": "snowflake.json",
+  "label": "Snowflake (stage 3 network, 23 moves)"
+ },
+ {
+  "file": "cobra.json",
+  "label": "Cobra (stage 3 network, 18 moves)"
+ },
+ {
+  "file": "near-depth30.json",
+  "label": "Near shape, 30 random moves away (stage 1 network)"
+ },
+ {
+  "file": "snowflake-stage2.json",
+  "label": "Snowflake (stage 2 network, with blocked tries)"
+ },
+ {
+  "file": "wolf-fails.json",
+  "label": "Wolf (unreachable with sharp edges: gets 3 moves close)"
+ }
+]

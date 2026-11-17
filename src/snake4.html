@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A 3D simulation of a Rubik's Snake using Three.js, with replay of trajectories from the trained controller.">
+    <meta name="keywords" content="Rubik's Snake, 3D simulation, Three.js, WebGL">
+    <link rel="canonical" href="https://www.mgroeber.de/misc/snake4.html"/> 
+    <title>Rubik's Snake Simulation (replay)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            pointer-events: none; /* Let clicks pass through around buttons */
+            user-select: none;
+            max-width: 300px;
+            max-height: calc(100vh - 80px);
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        p { margin: 5px 0; font-size: 0.9rem; color: #ccc; }
+        .status { font-weight: bold; color: #4ade80; }
+        .error { color: #f87171; transition: color 0.3s; }
+        
+        /* Interactive Controls */
+        #controls {
+            margin-top: 15px;
+            pointer-events: auto; /* Re-enable clicks for buttons */
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        button:hover { background: #2563eb; }
+        button:active { transform: scale(0.95); }
+        button.stop { background: #ef4444; }
+        button.stop:hover { background: #dc2626; }
+        
+        #notation {
+            margin-top: 15px;
+            pointer-events: auto;
+        }
+        #notation label { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+        #notation-input {
+            width: 100%;
+            box-sizing: border-box;
+            background: #111;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 6px 8px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            user-select: text;
+        }
+        #notation .row { display: flex; gap: 10px; margin-top: 8px; }
+
+        #replay {
+            margin-top: 15px;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+            pointer-events: auto;
+        }
+        #replay label, #replay .small { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+        #replay select, #replay input[type=file] {
+            width: 100%;
+            box-sizing: border-box;
+            background: #111;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 4px;
+            font-size: 0.8rem;
+        }
+        #replay .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+        #replay button { padding: 6px 10px; }
+        #replay input[type=range] { flex: 1; }
+        #replay-info { font-size: 0.8rem; color: #ccc; margin-top: 6px; }
+        #replay-info .ok { color: #4ade80; font-weight: bold; }
+        #replay-info .bad { color: #f87171; font-weight: bold; }
+        #replay-info .blocked { color: #fbbf24; }
+
+        .instructions {
+            margin-top: 15px;
+            font-size: 0.8rem;
+            color: #888;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <h1>Rubik's Snake</h1>
+        <p>Status: <span id="status" class="status">Ready</span></p>
+        <p>Moves: <span id="move-count">0</span></p>
+        
+        <div id="controls">
+            <button id="btn-start">Start Auto</button>
+            <button id="btn-stop" class="stop">Stop</button>
+        </div>
+
+        <div id="notation">
+            <label for="notation-input">Shape (<a href="http://thomas-wolter.de/rubik_notation_en.html" target="_blank" style="color:#888">Wolter notation</a>)</label>
+            <textarea id="notation-input" rows="3" spellcheck="false" placeholder="straight (e.g. 2R2-3L2-4L2)"></textarea>
+            <div class="row">
+                <button id="btn-set-shape">Set Shape</button>
+                <button id="btn-copy-shape">Copy</button>
+            </div>
+        </div>
+
+        <div id="replay">
+            <label for="replay-select">Replay a trajectory</label>
+            <select id="replay-select"><option value="">(choose an example)</option></select>
+            <div class="row">
+                <input type="file" id="replay-file" accept=".json,application/json" aria-label="Load trajectory file">
+            </div>
+            <div class="row">
+                <button id="btn-replay-play">Play</button>
+                <button id="btn-replay-step">Step</button>
+                <button id="btn-replay-reset">Reset</button>
+            </div>
+            <div class="row">
+                <span class="small" style="margin:0">Speed</span>
+                <input type="range" id="replay-speed" min="1" max="10" value="4" aria-label="Replay speed">
+            </div>
+            <div class="row">
+                <label style="margin:0"><input type="checkbox" id="show-target" checked> Show target</label>
+            </div>
+            <div id="replay-info">No trajectory loaded.</div>
+        </div>
+
+        <div class="instructions">
+            <p>• <strong>Left Click</strong> segment to twist 90°</p>
+            <p>• <strong>Right Click</strong> segment to twist -90°</p>
+            <p>• Manual moves obey physics</p>
+            <p>• Replays: example trajectories of the trained network, a JSON file in the exchange format, or <code>?replay=&lt;url&gt;</code></p>
+        </div>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as K from './kinematics.js';
+        import { isTwistFree } from './sweep.js';
+        import { parseNotation, toNotation } from './notation.js';
+
+        // --- Configuration ---
+        const SEGMENT_COUNT = K.NUM_WEDGES;
+        const SEGMENT_SIZE = 2; 
+        const ANIMATION_SPEED = 0.1; 
+        const COLORS = {
+            A: 0xcc3333, // Red
+            B: 0xffffff, // White
+            HOVER: 0xffd700, // Gold
+            ERROR: 0xff0000 // Bright Red
+        };
+
+        // --- Global State ---
+        let scene, camera, renderer, controls;
+        let snake; 
+        let ghost;
+        let isAnimating = false;
+        let isAutoPlaying = false; 
+        let moveCount = 0;
+        
+        // Raycasting
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let intersectedSegment = null;
+        const collisionObjects = []; // Invisible collision geometry for hit detection
+
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+            scene.fog = new THREE.Fog(0x222222, 20, 100);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(25, 25, 25);
+            camera.lookAt(0, 0, 0);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.autoRotate = false;
+            controls.autoRotateSpeed = 1.0;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            dirLight.position.set(10, 20, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            const d = 30;
+            dirLight.shadow.camera.left = -d;
+            dirLight.shadow.camera.right = d;
+            dirLight.shadow.camera.top = d;
+            dirLight.shadow.camera.bottom = -d;
+            dirLight.shadow.bias = -0.0005;
+            scene.add(dirLight);
+
+            // Floor
+            const floorGeo = new THREE.PlaneGeometry(200, 200);
+            const floorMat = new THREE.MeshStandardMaterial({ 
+                color: 0x151515, 
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -10;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Create Snakes
+            snake = new Snake(scene);
+            ghost = new Ghost(scene);
+            window.snakeView = { scene, camera, snake, ghost }; // for automated checks
+
+            // Events
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('pointerdown', onPointerDown);
+            
+            // Prevent context menu on right click
+            window.addEventListener('contextmenu', (e) => e.preventDefault());
+            
+            // UI Buttons
+            document.getElementById('btn-start').addEventListener('click', () => {
+                if (!isAutoPlaying) {
+                    replay.playing = false;
+                    isAutoPlaying = true;
+                    updateStatus("Auto-Pilot Started");
+                    gameLoop();
+                }
+            });
+            
+            document.getElementById('btn-stop').addEventListener('click', () => {
+                isAutoPlaying = false;
+                updateStatus("Auto-Pilot Stopped");
+            });
+
+            // Shape notation
+            document.getElementById('btn-set-shape').addEventListener('click', setShapeFromInput);
+            document.getElementById('notation-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setShapeFromInput();
+                }
+            });
+            document.getElementById('btn-copy-shape').addEventListener('click', () => {
+                navigator.clipboard?.writeText(toNotation(snake.angles));
+                updateStatus("Shape copied.");
+            });
+            showNotation();
+            updateViewOffset();
+            initReplay();
+
+            // Start Render Loop
+            requestAnimationFrame(animate);
+            
+            // Initial Status
+            updateStatus("Ready. Click segments to twist.");
+            
+            // Start Loop (it will check isAutoPlaying)
+            gameLoop();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            updateViewOffset();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onPointerMove(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            // Ignore if clicking on UI
+            if (['BUTTON', 'TEXTAREA', 'A', 'SELECT', 'INPUT', 'OPTION', 'LABEL'].includes(event.target.tagName)) return;
+            if (event.target.closest && event.target.closest('#ui')) return;
+            if (replay.playing) return;
+            
+            if (intersectedSegment && !isAnimating) {
+                // Determine direction: Left Click (+), Right Click (-)
+                const direction = event.button === 2 ? -1 : 1;
+                
+                // Find index
+                const index = snake.segments.indexOf(intersectedSegment);
+                
+                if (index > 0) {
+                    // Segment i turns about the joint to its predecessor.
+                    tryManualTwist(index - 1, direction);
+                } else {
+                    updateStatus("Cannot twist anchor segment.", true);
+                    setTimeout(() => updateStatus("Ready"), 1000);
+                }
+            }
+        }
+
+        // --- Geometry ---
+        function createWedgeGeometry(size) {
+            const h = size / 2;
+            const vertices = new Float32Array([
+                -h, -h,  h, // 0: BLF
+                 h, -h,  h, // 1: BRF
+                 h, -h, -h, // 2: BRB
+                -h, -h, -h, // 3: BLB
+                -h,  h, -h, // 4: TLB
+                 h,  h, -h, // 5: TRB
+            ]);
+            
+            // Fixed Winding Order so normals point OUTWARD
+            const indices = [
+                // Bottom Face (y = -h) -> Normal Down
+                0, 2, 1,  0, 3, 2,
+                
+                // Back Face (z = -h) -> Normal Back
+                3, 4, 5,  3, 5, 2,
+                
+                // Left Face (x = -h) -> Normal Left
+                0, 4, 3,
+                
+                // Right Face (x = h) -> Normal Right
+                1, 2, 5,
+                
+                // Slope Face -> Normal Up/Front
+                0, 1, 5,  0, 5, 4
+            ];
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
+        // --- Snake Class ---
+        // Rendering only: the joint angles live in `angles` and every segment's
+        // pose comes from the kinematics module.
+        class Snake {
+            constructor(sceneContext) {
+                this.segments = [];
+                this.groups = [];
+                this.angles = K.straight(SEGMENT_COUNT);
+                this.root = new THREE.Group();
+                // Keep the previous on-screen orientation of the anchor segment.
+                this.root.rotation.x = Math.PI / 2;
+                
+                const geo = createWedgeGeometry(SEGMENT_SIZE);
+                // Materials - Enable DoubleSide to ensure Raycasting works from all angles
+                this.matA = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.A, 
+                    roughness: 0.2, 
+                    transparent: true, 
+                    opacity: 0.9,
+                    side: THREE.DoubleSide
+                });
+                this.matB = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.B, 
+                    roughness: 0.2, 
+                    transparent: true, 
+                    opacity: 0.9,
+                    side: THREE.DoubleSide
+                });
+                this.matHover = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.HOVER, 
+                    roughness: 0.2,
+                    side: THREE.DoubleSide
+                });
+                this.matError = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.ERROR, 
+                    roughness: 0.2, 
+                    emissive: 0x550000,
+                    side: THREE.DoubleSide
+                });
+
+                const edgeGeo = new THREE.EdgesGeometry(geo);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.2 });
+                const collisionGeo = new THREE.BoxGeometry(SEGMENT_SIZE * 0.9, SEGMENT_SIZE * 1.2, SEGMENT_SIZE * 0.9);
+                const collisionMat = new THREE.MeshBasicMaterial({ visible: false });
+
+                for (let i = 0; i < SEGMENT_COUNT; i++) {
+                    // Each segment group is placed directly from the kinematic pose.
+                    const group = new THREE.Group();
+                    group.matrixAutoUpdate = false;
+
+                    const segmentMesh = new THREE.Mesh(geo, i % 2 === 0 ? this.matA : this.matB);
+                    segmentMesh.castShadow = true;
+                    segmentMesh.receiveShadow = true;
+                    
+                    // Store original material for hover reset
+                    segmentMesh.userData.originalMat = i % 2 === 0 ? this.matA : this.matB;
+                    segmentMesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
+                    group.add(segmentMesh);
+                    
+                    // Invisible box for better hover/click detection from all angles
+                    const collisionBox = new THREE.Mesh(collisionGeo, collisionMat);
+                    collisionBox.userData.segmentMesh = segmentMesh;
+                    collisionObjects.push(collisionBox);
+                    group.add(collisionBox);
+
+                    this.root.add(group);
+                    this.segments.push(segmentMesh);
+                    this.groups.push(group);
+                }
+
+                this.setPose(this.angles);
+                sceneContext.add(this.root);
+            }
+
+            // Place all segments for the given (possibly fractional) joint angles in quarter turns.
+            setPose(angles) {
+                const poses = K.forwardKinematics(angles);
+                poses.forEach((pose, i) => {
+                    const r = pose.rotation;
+                    const p = pose.position.map(v => v * SEGMENT_SIZE);
+                    this.groups[i].matrix.set(
+                        r[0], r[1], r[2], p[0],
+                        r[3], r[4], r[5], p[1],
+                        r[6], r[7], r[8], p[2],
+                        0, 0, 0, 1
+                    );
+                    this.groups[i].matrixWorldNeedsUpdate = true;
+                });
+            }
+        }
+
+        // --- Target ghost ---
+        // A translucent copy of the snake in the target shape, placed next to
+        // the snake so both can be compared while the replay runs.
+        const NAMED_SHAPES = {
+            wolf: '2R2-3L2-4L2-5R2-6R2-7L2-8L2-10L2-10R2-12R2',
+            cat: '9R2-9L2-8L2-7R2-6R2-6L2-5L3-4L2-3R2-2R2-2L2',
+            snowflake: '1R3-2L1-2R3-3L3-3R1-4L3-4R1-5L1-5R3-6L1-6R3-7L3-7R1-8L3-8R1-9L1-9R3-10L1-10R3-12L3-11R1-11L3-12R1',
+            cobra: '2L3-2R3-3L1-3R1-4L1-5L3-4R1-5R3-6L3-7L1-6R3-7R3-8L1-9L1-9R1-11L2-12R1',
+            ball: '1R1-2L3-2R3-3L1-3R1-4L1-4R1-5L3-5R3-12R3-12L3-11R3-11L3-10R1-10L1-9R1-9L1-8R3-8L3-7R1-6R3-6L3-7L1',
+        };
+
+        class Ghost {
+            constructor(sceneContext) {
+                this.root = new THREE.Group();
+                this.root.rotation.x = Math.PI / 2;
+                this.groups = [];
+                const geo = createWedgeGeometry(SEGMENT_SIZE);
+                const mat = new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.18, depthWrite: false });
+                const edges = new THREE.EdgesGeometry(geo);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.7 });
+                for (let i = 0; i < SEGMENT_COUNT; i++) {
+                    const group = new THREE.Group();
+                    group.matrixAutoUpdate = false;
+                    group.add(new THREE.Mesh(geo, mat));
+                    group.add(new THREE.LineSegments(edges, edgeMat));
+                    this.root.add(group);
+                    this.groups.push(group);
+                }
+                this.root.visible = false;
+                sceneContext.add(this.root);
+            }
+
+            // `start`: the snake's start shape; the ghost is placed beside it along X.
+            show(angles, start) {
+                const poses = K.forwardKinematics(angles);
+                const xs = poses.map(p => p.position[0]);
+                const startXs = K.forwardKinematics(start).map(p => p.position[0]);
+                const shift = (Math.max(...startXs) - Math.min(...xs) + 6) * SEGMENT_SIZE;
+                poses.forEach((pose, i) => {
+                    const r = pose.rotation;
+                    const p = pose.position.map(v => v * SEGMENT_SIZE);
+                    this.groups[i].matrix.set(
+                        r[0], r[1], r[2], p[0] + shift,
+                        r[3], r[4], r[5], p[1],
+                        r[6], r[7], r[8], p[2],
+                        0, 0, 0, 1
+                    );
+                    this.groups[i].matrixWorldNeedsUpdate = true;
+                });
+                this.root.visible = document.getElementById('show-target').checked;
+            }
+
+            hide() { this.root.visible = false; }
+        }
+
+        // --- Replay ---
+        // Trajectory format (docs/training-environment.md, section 5):
+        // { num_wedges, start: [angles], moves: [[joint, direction], ...], meta: {target, ...} }
+        // Moves that are blocked on the way (the network tried them, nothing changed)
+        // are shown as a short wiggle and do not change the shape.
+        const replay = {
+            trajectory: null,
+            target: null,      // target angles or null
+            index: 0,          // next move to play
+            playing: false,
+            blocked: 0,
+            done: false,
+        };
+        window.replayState = replay; // for automated checks
+
+        function targetAngles(meta) {
+            const t = meta && meta.target;
+            if (!t || typeof t !== 'string') return null;
+            const text = NAMED_SHAPES[t.toLowerCase()] ?? t;
+            try { return parseNotation(text); } catch { return null; }
+        }
+
+        function sameAngles(a, b) {
+            return a.length === b.length && a.every((v, i) => v === b[i]);
+        }
+
+        function reached() {
+            if (!replay.target) return false;
+            return sameAngles(snake.angles, replay.target) ||
+                sameAngles(snake.angles, replay.target.slice().reverse());
+        }
+
+        function validateTrajectory(t) {
+            if (!t || !Array.isArray(t.start) || !Array.isArray(t.moves)) throw new Error('not a trajectory: needs "start" and "moves"');
+            if ((t.num_wedges ?? SEGMENT_COUNT) !== SEGMENT_COUNT || t.start.length !== SEGMENT_COUNT - 1) {
+                throw new Error(`trajectory is for ${t.num_wedges ?? t.start.length + 1} wedges, this snake has ${SEGMENT_COUNT}`);
+            }
+            const start = K.normalizeAngles(t.start);
+            if (!K.isValid(start)) throw new Error('start shape is invalid (wedges overlap)');
+            for (const m of t.moves) {
+                if (!Array.isArray(m) || !Number.isInteger(m[0]) || m[0] < 0 || m[0] >= SEGMENT_COUNT - 1 || ![1, -1].includes(m[1])) {
+                    throw new Error(`invalid move ${JSON.stringify(m)}`);
+                }
+            }
+            return start;
+        }
+
+        function loadTrajectory(t, label) {
+            let start;
+            try {
+                start = validateTrajectory(t);
+            } catch (e) {
+                updateStatus(`Replay: ${e.message}`, true);
+                return;
+            }
+            isAutoPlaying = false;
+            replay.trajectory = t;
+            replay.label = label;
+            replay.target = targetAngles(t.meta);
+            resetReplay();
+            if (replay.target) ghost.show(replay.target, snake.angles); else ghost.hide();
+            frameView();
+            updateStatus(`Loaded ${label}`);
+        }
+
+        // Point the camera at the snake and, if shown, the target ghost. The view
+        // direction is the one in which the target (or the snake) looks widest,
+        // so flat shapes like the Snowflake are seen from the front, not edge-on.
+        function frameView() {
+            const box = new THREE.Box3().setFromObject(snake.root);
+            const subject = ghost.root.visible ? ghost : snake;
+            if (ghost.root.visible) box.union(new THREE.Box3().setFromObject(ghost.root));
+            const center = box.getCenter(new THREE.Vector3());
+            const radius = box.getBoundingSphere(new THREE.Sphere()).radius;
+
+            subject.root.updateMatrixWorld(true);
+            const pts = subject.groups.map(g => new THREE.Vector3().setFromMatrixPosition(g.matrixWorld));
+            const mean = pts.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(pts.length);
+            let best = null, bestSpread = Infinity;
+            for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) {
+                const d = new THREE.Vector3(x, y, z);
+                if (d.lengthSq() === 0) continue;
+                d.normalize();
+                if (d.y < 0.3) continue; // look from above, never from below the floor
+                // Spread along the view direction: small means the shape faces the camera.
+                const spread = pts.reduce((a, p) => a + Math.pow(p.clone().sub(mean).dot(d), 2), 0)
+                    + 0.5 * Math.abs(d.y - 0.6); // slight preference for a 35 degree elevation
+                if (spread < bestSpread - 1e-6) { bestSpread = spread; best = d; }
+            }
+            const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.05;
+            controls.target.copy(center);
+            camera.position.copy(center).add(best.multiplyScalar(dist));
+            camera.lookAt(center);
+            controls.update();
+        }
+
+        // Keep the scene centred in the area right of the UI panel on wide screens.
+        function updateViewOffset() {
+            const panel = document.getElementById('ui').getBoundingClientRect();
+            const w = window.innerWidth, h = window.innerHeight;
+            if (w > 2 * panel.right) camera.setViewOffset(w, h, -panel.right / 2, 0, w, h);
+            else camera.clearViewOffset();
+            camera.updateProjectionMatrix();
+        }
+
+        function resetReplay() {
+            if (!replay.trajectory || isAnimating) return;
+            replay.playing = false;
+            replay.index = 0;
+            replay.blocked = 0;
+            replay.done = false;
+            snake.angles = K.normalizeAngles(replay.trajectory.start);
+            snake.setPose(snake.angles);
+            moveCount = 0;
+            document.getElementById('move-count').innerText = moveCount;
+            showNotation();
+            updateReplayInfo();
+        }
+
+        function updateReplayInfo() {
+            const el = document.getElementById('replay-info');
+            document.getElementById('btn-replay-play').innerText = replay.playing ? 'Pause' : 'Play';
+            if (!replay.trajectory) { el.innerText = 'No trajectory loaded.'; return; }
+            const t = replay.trajectory;
+            const n = t.moves.length;
+            const meta = t.meta || {};
+            const lines = [];
+            lines.push(`<b>${escapeHtml(replay.label)}</b>`);
+            if (meta.policy) lines.push(`Policy: ${escapeHtml(String(meta.policy))}`);
+            lines.push(`Move ${replay.index} of ${n}` +
+                (replay.blocked ? ` · <span class="blocked">${replay.blocked} blocked</span>` : ''));
+            if (replay.target) {
+                const d = Math.min(distance(snake.angles, replay.target), distance(snake.angles, replay.target.slice().reverse()));
+                lines.push(reached() ? '<span class="ok">Target reached</span>' : `Distance to target: ${d} quarter turns`);
+            }
+            if (replay.done && replay.target && !reached()) lines.push('<span class="bad">Target not reached</span>');
+            el.innerHTML = lines.join('<br>');
+        }
+
+        function distance(a, b) {
+            let d = 0;
+            for (let i = 0; i < a.length; i++) {
+                const x = (((a[i] - b[i]) % 4) + 4) % 4;
+                d += Math.min(x, 4 - x);
+            }
+            return d;
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function replaySpeed() {
+            // 1 (slow) .. 10 (fast): animation step per frame
+            return 0.03 * Math.pow(1.45, Number(document.getElementById('replay-speed').value) - 1);
+        }
+
+        async function replayStep() {
+            const t = replay.trajectory;
+            if (!t || isAnimating || replay.index >= t.moves.length) return false;
+            const [joint, direction] = t.moves[replay.index];
+            replay.index++;
+            if (K.isValid(K.twist(snake.angles, joint, direction)) && isTwistFree(snake.angles, joint, direction)) {
+                await animateMove(joint, direction, replaySpeed());
+                moveCount++;
+                document.getElementById('move-count').innerText = moveCount;
+            } else {
+                replay.blocked++;
+                flashError(snake.segments[joint + 1]);
+                await animateWiggle(joint, direction, replaySpeed());
+            }
+            if (replay.index >= t.moves.length || reached()) {
+                replay.done = true;
+                replay.playing = false;
+                updateStatus(reached() ? 'Replay finished: target reached.' : 'Replay finished.', !reached() && !!replay.target);
+            }
+            updateReplayInfo();
+            return true;
+        }
+
+        async function replayLoop() {
+            while (replay.playing && !replay.done) {
+                const moved = await replayStep();
+                if (!moved) break;
+            }
+            replay.playing = false;
+            updateReplayInfo();
+        }
+
+        async function loadReplayIndex() {
+            const select = document.getElementById('replay-select');
+            try {
+                const res = await fetch('replays/index.json');
+                if (!res.ok) throw new Error(res.statusText);
+                for (const item of await res.json()) {
+                    const opt = document.createElement('option');
+                    opt.value = 'replays/' + item.file;
+                    opt.textContent = item.label;
+                    select.appendChild(opt);
+                }
+            } catch (e) {
+                select.disabled = true;
+                select.firstChild.textContent = '(examples not found)';
+            }
+        }
+
+        async function loadReplayUrl(url, label) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                loadTrajectory(await res.json(), label ?? url);
+            } catch (e) {
+                updateStatus(`Replay: could not load ${url} (${e.message})`, true);
+            }
+        }
+
+        function initReplay() {
+            const select = document.getElementById('replay-select');
+            select.addEventListener('change', () => {
+                if (select.value) loadReplayUrl(select.value, select.options[select.selectedIndex].textContent);
+            });
+            document.getElementById('replay-file').addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    loadTrajectory(JSON.parse(await file.text()), file.name);
+                } catch (err) {
+                    updateStatus(`Replay: ${file.name} is not valid JSON`, true);
+                }
+            });
+            document.getElementById('btn-replay-play').addEventListener('click', () => {
+                if (!replay.trajectory) return;
+                if (replay.done) resetReplay();
+                replay.playing = !replay.playing;
+                updateReplayInfo();
+                if (replay.playing) replayLoop();
+            });
+            document.getElementById('btn-replay-step').addEventListener('click', () => {
+                if (!replay.trajectory || replay.playing) return;
+                replayStep();
+            });
+            document.getElementById('btn-replay-reset').addEventListener('click', resetReplay);
+            document.getElementById('show-target').addEventListener('change', (e) => {
+                ghost.root.visible = e.target.checked && !!replay.target;
+                if (replay.trajectory) frameView();
+            });
+            loadReplayIndex();
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('speed')) document.getElementById('replay-speed').value = params.get('speed');
+            const url = params.get('replay');
+            if (url) {
+                loadReplayUrl(url).then(() => {
+                    if (params.get('autoplay') !== '0' && replay.trajectory) {
+                        replay.playing = true;
+                        replayLoop();
+                    }
+                });
+            }
+        }
+
+        // --- Logic Engine ---
+
+        async function tryManualTwist(joint, direction) {
+            if (isTwistFree(snake.angles, joint, direction)) {
+                updateStatus(`Twisting Segment ${joint + 2}...`);
+                await animateMove(joint, direction);
+                moveCount++;
+                document.getElementById('move-count').innerText = moveCount;
+            } else {
+                updateStatus("Blocked! Collision detected.", true);
+                flashError(snake.segments[joint + 1]);
+            }
+        }
+
+        // Show the current shape in the notation field.
+        function showNotation() {
+            document.getElementById('notation-input').value = toNotation(snake.angles);
+        }
+
+        // Jump to the shape typed into the notation field, if it is valid.
+        function setShapeFromInput() {
+            if (isAnimating) return;
+            let angles;
+            try {
+                angles = parseNotation(document.getElementById('notation-input').value);
+            } catch (e) {
+                updateStatus(e.message, true);
+                return;
+            }
+            const collisions = K.findCollisions(angles);
+            if (collisions.length > 0) {
+                const [i, j] = collisions[0];
+                updateStatus(`Invalid shape: segments ${i + 1} and ${j + 1} overlap.`, true);
+                return;
+            }
+            isAutoPlaying = false;
+            snake.angles = angles;
+            snake.setPose(angles);
+            moveCount = 0;
+            document.getElementById('move-count').innerText = moveCount;
+            showNotation();
+            updateStatus("Shape set.");
+        }
+
+        function flashError(mesh) {
+            const original = mesh.userData.originalMat;
+            mesh.material = snake.matError;
+            setTimeout(() => {
+                if (mesh === intersectedSegment) {
+                    mesh.material = snake.matHover;
+                } else {
+                    mesh.material = original;
+                }
+            }, 300);
+        }
+
+        async function gameLoop() {
+            // Polling loop
+            if (!isAutoPlaying || isAnimating) {
+                setTimeout(gameLoop, 100);
+                return;
+            }
+
+            // Random valid end state whose twist is also free on the way
+            const moves = K.validMoves(snake.angles);
+            let move = null;
+            while (moves.length > 0 && !move) {
+                const [candidate] = moves.splice(Math.floor(Math.random() * moves.length), 1);
+                if (isTwistFree(snake.angles, candidate.joint, candidate.direction)) move = candidate;
+            }
+            if (move) {
+                updateStatus(`Auto: Twisting Segment ${move.joint + 2}`);
+                await animateMove(move.joint, move.direction);
+                moveCount++;
+                document.getElementById('move-count').innerText = moveCount;
+            }
+
+            setTimeout(gameLoop, 50);
+        }
+
+        function updateStatus(text, isError = false) {
+            const el = document.getElementById('status');
+            el.innerText = text;
+            el.className = isError ? 'status error' : 'status';
+        }
+
+        // A blocked twist: turn a little way and back, the shape does not change.
+        function animateWiggle(joint, direction, speed = ANIMATION_SPEED) {
+            return new Promise(resolve => {
+                isAnimating = true;
+                const start = snake.angles;
+                let progress = 0;
+                function loop() {
+                    progress = Math.min(1, progress + speed);
+                    const frame = start.slice();
+                    frame[joint] += direction * 0.12 * Math.sin(progress * Math.PI);
+                    snake.setPose(frame);
+                    if (progress < 1) {
+                        requestAnimationFrame(loop);
+                    } else {
+                        snake.setPose(start);
+                        isAnimating = false;
+                        resolve();
+                    }
+                }
+                loop();
+            });
+        }
+
+        function animateMove(joint, direction, speed = ANIMATION_SPEED) {
+            return new Promise(resolve => {
+                isAnimating = true;
+                const start = snake.angles;
+                
+                let progress = 0;
+                
+                function loop() {
+                    progress += speed;
+                    if (progress >= 1) progress = 1;
+                    
+                    const ease = 1 - Math.pow(1 - progress, 3);
+                    const frame = start.slice();
+                    frame[joint] += direction * ease;
+                    snake.setPose(frame);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(loop);
+                    } else {
+                        snake.angles = K.twist(start, joint, direction);
+                        snake.setPose(snake.angles);
+                        showNotation();
+                        isAnimating = false;
+                        resolve();
+                    }
+                }
+                loop();
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Raycasting logic for hover - use collision boxes for hit detection
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(collisionObjects);
+            
+            // Reset previous
+            if (intersectedSegment) {
+                if (intersectedSegment.material !== snake.matError) {
+                    intersectedSegment.material = intersectedSegment.userData.originalMat;
+                }
+                intersectedSegment = null;
+            }
+
+            if (intersects.length > 0) {
+                const collisionBox = intersects[0].object;
+                const mesh = collisionBox.userData.segmentMesh;
+                const index = snake.segments.indexOf(mesh);
+                
+                if (index > 0 && !isAnimating) { // Highlight only if movable
+                    intersectedSegment = mesh;
+                    if (intersectedSegment.material !== snake.matError) {
+                        intersectedSegment.material = snake.matHover;
+                    }
+                    document.body.style.cursor = 'pointer';
+                } else {
+                    document.body.style.cursor = 'default';
+                }
+            } else {
+                document.body.style.cursor = 'default';
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
