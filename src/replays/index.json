@@ -12,6 +12,10 @@
   "label": "Cobra (stage 3 network, 18 moves)"
  },
  {
+  "file": "unseen-compact.json",
+  "label": "Unseen compact 3D shape (stage 3 network, 25 moves)"
+ },
+ {
   "file": "near-depth30.json",
   "label": "Near shape, 30 random moves away (stage 1 network)"
  },

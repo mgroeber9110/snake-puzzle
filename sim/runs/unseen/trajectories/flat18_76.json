@@ -1,0 +1,1 @@
+{"num_wedges": 24, "start": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "moves": [[1, -1], [1, -1], [22, -1], [6, -1], [10, 1], [10, 1], [22, -1], [6, -1]], "meta": {"policy": "stage3", "task": "reach_shape", "target": "2L2-4R2-6R2-12R2", "target_name": "unseen flat18 #76", "executor": "mujoco", "success": true}}

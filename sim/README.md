@@ -136,3 +136,40 @@ episodes start at the stick. The other 40 % are the stage-2 targets.
   the episodes, a smaller share should fix this.
 - The policy was shown these three shapes in training. How well it builds a compact 3D shape it has never seen is
   not measured yet.
+
+## Generalization to unseen shapes
+
+`train/unseen_shapes.py` builds 99 shapes no network was trained on, each made by twists from the stick that the
+MuJoCo executor completes (so all are reachable), and none closer than 8 quarter turns to Ball, Cobra or Snowflake:
+
+- **compact3d** (20): walks biased towards a small radius of gyration; on average 23.4 occupied cells and radius of
+  gyration 1.52 (Ball 18 cells / 1.22, Cobra 22 / 1.79)
+- **far60, far100** (20 each): random walks of 60 and 100 moves (training: up to 30)
+- **flat18, flat24** (19 and 20): flat shapes from 18 and 24 half turns (training: up to 14)
+
+`train/evaluate_unseen.py runs/stage3/model_final.zip runs/stage2/model_final.zip` tries each shape from the stick
+in MuJoCo, 200 steps, once with the most likely action and 8 times with sampled actions. Results in
+`runs/unseen/eval.md`:
+
+| Shapes | Network | Most likely action | Best of 8 samples | One sample |
+|---|---|---|---|---|
+| compact3d | stage 3 | 5/20 | 19/20 | 63 % |
+| compact3d | stage 2 | 10/20 | 20/20 | 73 % |
+| far60 | stage 3 | 13/20 | 20/20 | 86 % |
+| far60 | stage 2 | 17/20 | 20/20 | 95 % |
+| far100 | stage 3 | 17/20 | 18/20 | 87 % |
+| far100 | stage 2 | 17/20 | 20/20 | 94 % |
+| flat18 | stage 3 | 18/19 | 19/19 | 100 % |
+| flat18 | stage 2 | 19/19 | 19/19 | 100 % |
+| flat24 | stage 3 | 14/20 | 20/20 | 100 % |
+| flat24 | stage 2 | 19/20 | 20/20 | 100 % |
+
+- The networks do generalize: with 8 sampled attempts nearly every unseen shape is reached, and successful attempts
+  need only 0-3 % more moves than the angle distance.
+- The most likely action fails much more often, and every one of these failures is a loop: the snake gets within about
+  2 moves of the target and then cycles between a few states. Sampling breaks the loops.
+- The stage-3 network generalizes worse than the stage-2 one: training on three fixed shapes for 53 minutes made it
+  better at those three and worse at others.
+- Physics check: of the 67 shapes the stage-3 network reached with the most likely action, 65 are also reached with
+  the exact sweep check; 2 rely on a move that MuJoCo completes and the exact check blocks. In the other direction
+  MuJoCo blocked 9 moves that the exact check finds free, so in compact shapes it is slightly too strict.
