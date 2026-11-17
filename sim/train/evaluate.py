@@ -120,7 +120,8 @@ def main():
     for name in NAMED:
         r = run_episode(env, model, rng, 0, named(name))
         traj = {"num_wedges": 24, "start": r["start"].tolist(), "moves": r["moves"],
-                "meta": {"policy": "ppo-stage1", "task": "reach_shape", "target": name,
+                "meta": {"policy": "ppo-stage1", "task": "reach_shape",
+                         "target": to_notation(named(name)), "target_name": name,
                          "success": r["success"]}}
         (out / "trajectories" / f"{name}.json").write_text(json.dumps(traj))
         env.reset(options={"target": named(name)})

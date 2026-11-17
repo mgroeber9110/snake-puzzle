@@ -472,13 +472,6 @@
         // --- Target ghost ---
         // A translucent copy of the snake in the target shape, placed next to
         // the snake so both can be compared while the replay runs.
-        const NAMED_SHAPES = {
-            wolf: '2R2-3L2-4L2-5R2-6R2-7L2-8L2-10L2-10R2-12R2',
-            cat: '9R2-9L2-8L2-7R2-6R2-6L2-5L3-4L2-3R2-2R2-2L2',
-            snowflake: '1R3-2L1-2R3-3L3-3R1-4L3-4R1-5L1-5R3-6L1-6R3-7L3-7R1-8L3-8R1-9L1-9R3-10L1-10R3-12L3-11R1-11L3-12R1',
-            cobra: '2L3-2R3-3L1-3R1-4L1-5L3-4R1-5R3-6L3-7L1-6R3-7R3-8L1-9L1-9R1-11L2-12R1',
-            ball: '1R1-2L3-2R3-3L1-3R1-4L1-4R1-5L3-5R3-12R3-12L3-11R3-11L3-10R1-10L1-9R1-9L1-8R3-8L3-7R1-6R3-6L3-7L1',
-        };
 
         class Ghost {
             constructor(sceneContext) {
@@ -526,7 +519,8 @@
 
         // --- Replay ---
         // Trajectory format (docs/training-environment.md, section 5):
-        // { num_wedges, start: [angles], moves: [[joint, direction], ...], meta: {target, ...} }
+        // { num_wedges, start: [angles], moves: [[joint, direction], ...],
+        //   meta: { target: "<Wolter notation>", target_name: "<optional label>", ... } }
         // Moves that are blocked on the way (the network tried them, nothing changed)
         // are shown as a short wiggle and do not change the shape.
         const replay = {
@@ -539,11 +533,13 @@
         };
         window.replayState = replay; // for automated checks
 
+        // meta.target is Wolter notation; "" is the straight stick, missing means no target.
         function targetAngles(meta) {
             const t = meta && meta.target;
-            if (!t || typeof t !== 'string') return null;
-            const text = NAMED_SHAPES[t.toLowerCase()] ?? t;
-            try { return parseNotation(text); } catch { return null; }
+            if (typeof t !== 'string') return null;
+            const angles = parseNotation(t);
+            if (!K.isValid(angles)) throw new Error('target shape is invalid (wedges overlap)');
+            return angles;
         }
 
         function sameAngles(a, b) {
@@ -579,10 +575,17 @@
                 updateStatus(`Replay: ${e.message}`, true);
                 return;
             }
+            let target;
+            try {
+                target = targetAngles(t.meta);
+            } catch (e) {
+                updateStatus(`Replay: target: ${e.message}`, true);
+                return;
+            }
             isAutoPlaying = false;
             replay.trajectory = t;
             replay.label = label;
-            replay.target = targetAngles(t.meta);
+            replay.target = target;
             resetReplay();
             if (replay.target) ghost.show(replay.target, snake.angles); else ghost.hide();
             frameView();
@@ -653,6 +656,7 @@
             const lines = [];
             lines.push(`<b>${escapeHtml(replay.label)}</b>`);
             if (meta.policy) lines.push(`Policy: ${escapeHtml(String(meta.policy))}`);
+            if (replay.target) lines.push(`Target: ${escapeHtml(String(meta.target_name ?? (meta.target || 'straight stick')))}`);
             lines.push(`Move ${replay.index} of ${n}` +
                 (replay.blocked ? ` · <span class="blocked">${replay.blocked} blocked</span>` : ''));
             if (replay.target) {

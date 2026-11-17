@@ -62,6 +62,7 @@ def eval_generated(arg):
 def eval_named(arg):
     path, name, executor = arg
     from rubiksnake.env import RubikSnakeEnv
+    from rubiksnake.notation import to_notation
     from rubiksnake.shapes import named
     model = _load(path)
     env = RubikSnakeEnv(executor=executor, max_steps=200)
@@ -71,7 +72,8 @@ def eval_named(arg):
         out[label] = {k: r[k] for k in ("success", "steps", "blocked", "distance", "closest")}
         out[label + "_trajectory"] = {"num_wedges": 24, "start": r["start"], "moves": r["moves"],
                                       "meta": {"policy": Path(path).parent.name, "task": "reach_shape",
-                                               "target": name, "executor": executor, "success": r["success"]}}
+                                               "target": to_notation(named(name)), "target_name": name,
+                                               "executor": executor, "success": r["success"]}}
     return out
 
 

@@ -165,11 +165,12 @@ A shared exchange format for trajectories:
   "num_wedges": 24,
   "start": [0, 0, 0, "... 23 values ..."],
   "moves": [[5, 1], [12, -1]],
-  "meta": {"policy": "ppo-v1", "task": "reach_shape", "target": "ball"}
+  "meta": {"policy": "ppo-v1", "task": "reach_shape",
+           "target": "1R1-2L3-2R3-...-12L3-12R3", "target_name": "ball"}
 }
 ```
 
-`moves` are `[joint, direction]` pairs as taken by `twist()`.
+`moves` are `[joint, direction]` pairs as taken by `twist()`. `meta.target` is the target shape in Wolter notation (the empty string is the straight stick), so a player needs no list of named shapes; `meta.target_name` is an optional label.
 
 Changes in `src/`:
 
