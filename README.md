@@ -46,3 +46,19 @@ In `src/snake3.html` the current shape is shown in this notation, and a shape ca
 `kinematics.js`, `sweep.js` and `notation.js`.
 
 Run the tests with `npm test` (Node 22 or later, no dependencies).
+
+## Iteration 4: Replay of the trained controller
+
+`src/snake4.html` builds on iteration 3 and adds a replay of trajectories from the trained network (`sim/`, see
+`sim/README.md`). A trajectory is a JSON file in the exchange format of `docs/training-environment.md`:
+`{"num_wedges": 24, "start": [...23 angles], "moves": [[joint, direction], ...], "meta": {"target": "<Wolter notation>", "target_name": "ball"}}`.
+
+- Pick one of the examples in `src/replays/` (Ball, Snowflake, Cobra, a near shape, a Snowflake with blocked tries,
+  and a failed attempt at the Wolf), load your own file, or open `snake4.html?replay=<url>` (`&speed=1..10`,
+  `&autoplay=0`).
+- Play, Step and Reset control the replay. Every move is checked with `isTwistFree`; moves the network tried that are
+  blocked on the way are shown as a short wiggle in red and leave the shape unchanged, as in the training environment.
+- If `meta.target` is given (Wolter notation, `""` for the straight stick), the target is shown as a translucent
+  ghost beside the snake (`meta.target_name` is an optional label for the panel), and the panel shows the distance to it and whether it was reached (also when
+  read from the other end of the snake).
+- The trajectories written by `sim/train/evaluate*.py` (`sim/runs/*/trajectories/`) can be loaded directly.

@@ -1,0 +1,6 @@
+{
+  "executor": "mujoco (stiff servos: hold_stiffness 1e5, torque_limit 40, max_drift 0.05)",
+  "init": "runs/stage1/model_final.zip",
+  "targets": "mixed: 75% flat (1..D half turns from the stick), 25% near (2D quarter turns), D from 4 to 14",
+  "model_final": "model after about 67k steps (12 minutes on 4 cores); run stopped there, planned 500k"
+}

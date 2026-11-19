@@ -1,0 +1,6 @@
+{
+  "executor": "mujoco (stiff servos)",
+  "init": "runs/stage2/model_final.zip",
+  "targets": "60% ball/cobra/snowflake starting up to N states along unfolding paths (bank.json), N 2..26 at 90% success; 40% stage-2 mixed targets (up to 14 half turns)",
+  "model_final": "model after about 310k steps (53 minutes on 4 cores); N reached 26 after 45 minutes; run stopped there, planned 600k"
+}

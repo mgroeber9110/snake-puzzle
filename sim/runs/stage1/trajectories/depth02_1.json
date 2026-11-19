@@ -1,0 +1,1 @@
+{"num_wedges": 24, "start": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "moves": [[8, 1], [8, 1]], "meta": {"policy": "ppo-stage1", "task": "reach_shape", "depth": 2, "target": "5R2", "success": true}}

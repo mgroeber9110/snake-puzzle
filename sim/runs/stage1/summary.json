@@ -1,0 +1,7 @@
+{
+  "executor": "mujoco",
+  "policy": "ChainPolicy (rubiksnake/policy.py), MaskablePPO, 4 envs",
+  "curriculum": "targets 1..D completed random moves from the stick, D += 1 at 85% success over 500 episodes, cap 30",
+  "model_final": "checkpoint taken when depth 29 passed (about 146k steps, 20 minutes on 4 cores)",
+  "stopped": "run stopped at about 262k of the planned 800k steps, after depth 30 had stayed at 99.6-100% for 20 minutes"
+}
