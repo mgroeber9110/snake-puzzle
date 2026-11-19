@@ -47,7 +47,8 @@ def eval_generated(arg):
     path, kind, depth, n = arg
     from rubiksnake.env import RubikSnakeEnv
     model = _load(path)
-    env = RubikSnakeEnv(target_kind=kind, target_depth=depth, max_steps=8 * depth + 20)
+    env = RubikSnakeEnv(target_kind=kind, target_depth=depth, max_steps=8 * depth + 20,
+                         revisit="revisit" in model.observation_space.spaces)
     det = [episode(env, model, True, 1000 * depth + s) for s in range(n)]
     smp = [episode(env, model, False, 1000 * depth + s) for s in range(n)]
     ok = [r for r in det if r["success"]]
@@ -65,7 +66,8 @@ def eval_named(arg):
     from rubiksnake.notation import to_notation
     from rubiksnake.shapes import named
     model = _load(path)
-    env = RubikSnakeEnv(executor=executor, max_steps=200)
+    env = RubikSnakeEnv(executor=executor, max_steps=200,
+                         revisit="revisit" in model.observation_space.spaces)
     out = {"shape": name, "executor": executor}
     for label, det in (("deterministic", True), ("sampled", False)):
         r = episode(env, model, det, 0, named(name))

@@ -23,45 +23,16 @@ from pathlib import Path
 
 import numpy as np
 
-from rubiksnake.kinematics import angle_distance, forward_kinematics, straight, twist, valid_move_mask
+from rubiksnake.kinematics import angle_distance, forward_kinematics, straight
 from rubiksnake.notation import to_notation
-from rubiksnake.shapes import flat_walk, named, random_walk
+from rubiksnake.shapes import compact_walk, flat_walk, gyration, named, random_walk
 
 TRAINED = ["ball", "cobra", "snowflake"]
-
-
-def gyration(angles) -> float:
-    cells, _ = forward_kinematics(angles)
-    c = cells - cells.mean(0)
-    return float(np.sqrt((c * c).sum(1).mean()))
 
 
 def occupied_cells(angles) -> int:
     cells, _ = forward_kinematics(angles)
     return len({tuple(c) for c in cells.tolist()})
-
-
-def compact_walk(rng, executor, steps=80, beta=3.0):
-    """Random walk that prefers moves which make the shape more compact; returns
-    the most compact state seen after at least 20 moves."""
-    a = straight()
-    best, best_rg = None, np.inf
-    for k in range(steps):
-        acts = np.flatnonzero(valid_move_mask(a))
-        cand = [(int(x // 2), 1 - 2 * int(x % 2)) for x in acts]
-        rg = np.array([gyration(twist(a, j, d)) for j, d in cand])
-        p = np.exp(-beta * (rg - rg.min()))
-        order = rng.choice(len(cand), size=len(cand), replace=False, p=p / p.sum())
-        for i in order:
-            j, d = cand[i]
-            if executor.execute(a, j, d).done:
-                a = twist(a, j, d)
-                break
-        else:
-            break
-        if k >= 20 and gyration(a) < best_rg:
-            best, best_rg = a.copy(), gyration(a)
-    return best
 
 
 def far_from_trained(a, min_dist=8):
@@ -79,6 +50,7 @@ def make(args):
     rng = np.random.default_rng(seed)
     if kind == "compact3d":
         a = compact_walk(rng, ex)
+        a = None if gyration(a) == np.inf else a
     elif kind.startswith("far"):
         a = random_walk(rng, straight(), int(kind[3:]), ex)
     else:

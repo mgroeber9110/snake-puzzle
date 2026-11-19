@@ -5,7 +5,7 @@
 Every shape is tried from the straight stick with the MuJoCo executor, 200
 steps: once with the most likely action and 8 times with sampled actions
 ("best of 8" counts a shape as reached if any sample reaches it).
-Writes runs/unseen/eval.md, eval.json and trajectories of the first stage-3 attempts.
+Writes runs/unseen/eval.md, eval.json and the trajectories of the first network (most likely action).
 """
 
 from __future__ import annotations
@@ -29,7 +29,8 @@ def run_shape(shape, model_path):
     torch.set_num_threads(1)
     torch.manual_seed(0)
     model = MaskablePPO.load(model_path)
-    env = RubikSnakeEnv(executor="mujoco", max_steps=200)
+    env = RubikSnakeEnv(executor="mujoco", max_steps=200,
+                         revisit="revisit" in model.observation_space.spaces)
     target = np.array(shape["angles"])
     out = []
     for k in range(1 + SAMPLES):
@@ -60,7 +61,7 @@ def main():
     report = {}
     lines = ["| Shapes | Network | Count | Reached (most likely action) | Reached (best of 8 samples) | "
              "Moves / distance | Closest when not reached | Blocked per attempt |", "|---|---|---|---|---|---|---|---|"]
-    for model_path in args.models:
+    for m_idx, model_path in enumerate(args.models):
         name = Path(model_path).parent.name
         with Pool(4) as pool:
             res = pool.map(partial(run_shape, model_path=model_path), shapes, chunksize=1)
@@ -68,7 +69,7 @@ def main():
         for shape, r in zip(shapes, res):
             report[name].append({"kind": shape["kind"], "notation": shape["notation"],
                                  "attempts": [{k: v for k, v in a.items() if k != "moves"} for a in r]})
-            if name == "stage3" and len(report[name]) <= 200:
+            if m_idx == 0:
                 i = len(report[name]) - 1
                 det = r[0]
                 (out_dir / "trajectories" / f"{shape['kind']}_{i:02d}.json").write_text(json.dumps({

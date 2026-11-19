@@ -1,7 +1,8 @@
 """Policy network that follows the chain structure of the snake.
 
 Every joint gets a feature vector (its angle, target angle, difference,
-which of its two moves are allowed and which were found blocked), and a stack of dilated 1D convolutions
+which of its two moves are allowed, which were found blocked and which
+would lead back to a shape visited earlier in the episode), and a stack of dilated 1D convolutions
 along the chain mixes information between joints; with dilations up to 8 every
 joint sees the whole snake. The two logits of a joint (turn +1 / -1) come from
 the same small head for every joint, so what is learned for one joint carries
@@ -33,8 +34,9 @@ class ChainExtractor(BaseFeaturesExtractor):
         self.num_joints = len(observation_space["angles"].nvec)
         super().__init__(observation_space, features_dim=self.num_joints * channels)
         self.keys = [k for k in ("angles", "target", "delta") if k in observation_space.spaces]
-        self.has_blocked = "blocked" in observation_space.spaces
-        in_ch = 4 * len(self.keys) + 2 + (2 if self.has_blocked else 0)
+        # Per-move flags, two channels per joint (turn +1 / -1), in this order.
+        self.flag_keys = [k for k in ("blocked", "revisit") if k in observation_space.spaces]
+        in_ch = 4 * len(self.keys) + 2 + 2 * len(self.flag_keys)
         self.inp = nn.Conv1d(in_ch, channels, 1)
         self.blocks = nn.Sequential(*[_Block(channels, d) for d in dilations])
         self.channels = channels
@@ -42,8 +44,7 @@ class ChainExtractor(BaseFeaturesExtractor):
     def forward(self, obs):
         b, n = obs["action_mask"].shape[0], self.num_joints
         parts = [obs[k].view(b, n, 4) for k in self.keys] + [obs["action_mask"].view(b, n, 2)]
-        if self.has_blocked:
-            parts.append(obs["blocked"].view(b, n, 2))
+        parts += [obs[k].view(b, n, 2) for k in self.flag_keys]
         x = torch.cat(parts, dim=2).transpose(1, 2)            # (B, C_in, joints)
         x = torch.relu(self.blocks(self.inp(x)))                # (B, C, joints)
         return x.transpose(1, 2).reshape(b, n * self.channels)  # joint-major

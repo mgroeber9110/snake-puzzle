@@ -15,12 +15,13 @@ from gymnasium import spaces
 
 from .kinematics import forward_kinematics, straight, twist, valid_move_mask
 from .notation import parse_notation
-from .shapes import flat_walk, near_shape, random_walk
+from .shapes import compact_walk, flat_walk, near_shape, random_walk
 
 STEP_PENALTY = -0.01
 SUCCESS_REWARD = 1.0
 BLOCKED_PENALTY = -0.05
 INVALID_PENALTY = -1.0
+REVISIT_PENALTY = -0.05
 
 
 def make_executor(kind: str, num_wedges: int, physics=None):
@@ -57,7 +58,8 @@ class RubikSnakeEnv(gym.Env):
                  geometry: bool = False, delta: bool = True,
                  target_kind: str = "near", near_share: float = 0.25,
                  named_targets: dict | None = None, start_bank: dict | None = None,
-                 named_share: float = 0.5):
+                 named_share: float = 0.5, revisit: bool = False,
+                 target_mix: dict | None = None):
         if task != "reach_shape":
             raise NotImplementedError("only task='reach_shape' is implemented so far")
         self.num_wedges = num_wedges
@@ -70,10 +72,13 @@ class RubikSnakeEnv(gym.Env):
         self.gamma = gamma
         self.geometry = geometry
         self.delta = delta
-        if target_kind not in ("near", "flat", "mixed"):
+        if target_kind not in ("near", "flat", "mixed", "mix"):
             raise ValueError(f"unknown target_kind {target_kind!r}")
         self.target_kind = target_kind
         self.near_share = near_share
+        # target_kind="mix": draw the kind of each generated target from these weights
+        self.target_mix = target_mix or {"near": 0.35, "flat": 0.3, "compact": 0.35}
+        self.revisit = revisit
         # Stage 3: named shapes mixed into the generated targets. `start_bank`
         # maps a name to paths (lists of states) leading from the shape towards
         # the stick; with `curriculum_depth=N` an episode for that shape starts
@@ -99,6 +104,10 @@ class RubikSnakeEnv(gym.Env):
         # when the state changes. Without it a policy without memory would
         # repeat a blocked move forever.
         obs["blocked"] = spaces.MultiBinary(2 * n)
+        if revisit:
+            # Moves that would lead back to a shape already visited in this
+            # episode. Lets the network learn to avoid going round in circles.
+            obs["revisit"] = spaces.MultiBinary(2 * n)
         if delta:
             # (target - angles) mod 4: redundant, but saves the network from
             # learning 23 comparisons of one-hot codes.
@@ -143,6 +152,8 @@ class RubikSnakeEnv(gym.Env):
     def _obs(self):
         o = {"angles": self.angles.copy(), "target": self.target.copy(),
              "action_mask": self._mask.astype(np.int8), "blocked": self._blocked.astype(np.int8)}
+        if self.revisit:
+            o["revisit"] = self._revisit_flags().astype(np.int8)
         if self.delta:
             o["delta"] = (self.target - self.angles) % 4
         if self.geometry:
@@ -151,11 +162,30 @@ class RubikSnakeEnv(gym.Env):
             o["geometry"] = np.concatenate([cells, rots.reshape(-1, 9)], 1).astype(np.float32)
         return o
 
+    def _revisit_flags(self) -> np.ndarray:
+        flags = np.zeros(2 * self.num_joints, dtype=bool)
+        for a in np.flatnonzero(self._mask):
+            nxt = twist(self.angles, int(a // 2), 1 - 2 * int(a % 2))
+            flags[a] = nxt.tobytes() in self._visited
+        return flags
+
     def _draw_target(self):
         if self.targets is None:
             d = self.target_depth
             depth = int(self.np_random.integers(d[0], d[1] + 1)) if isinstance(d, tuple) else int(d)
             kind = self.target_kind
+            if kind == "mix":
+                kinds = sorted(self.target_mix)
+                w = np.array([self.target_mix[k] for k in kinds], dtype=float)
+                kind = kinds[int(self.np_random.choice(len(kinds), p=w / w.sum()))]
+                if kind == "named":  # one of named_targets, from the start position
+                    names = sorted(self.named_targets)
+                    return self.named_targets[names[int(self.np_random.integers(len(names)))]].copy()
+                if kind == "compact":
+                    return compact_walk(self.np_random, self.executor, steps=60, num_wedges=self.num_wedges)
+                if kind == "flat":
+                    return flat_walk(self.np_random, depth, self.num_wedges, self.executor)
+                return near_shape(self.np_random, min(2 * depth, 30), self.num_wedges, self.executor)
             if kind == "mixed":  # mostly flat shapes, some near shapes so stage 1 is not forgotten
                 kind = "near" if self.np_random.random() < self.near_share else "flat"
             if kind == "flat":   # stage 2: `depth` half turns from the stick
@@ -210,6 +240,7 @@ class RubikSnakeEnv(gym.Env):
         self.steps = 0
         self._mask = valid_move_mask(self.angles)
         self._blocked = np.zeros(2 * self.num_joints, dtype=bool)
+        self._visited = {self.angles.tobytes()}
         return self._obs(), {"distance": self.distance()}
 
     def step(self, action):
@@ -217,7 +248,7 @@ class RubikSnakeEnv(gym.Env):
         joint, direction = action // 2, 1 - 2 * (action % 2)
         self.steps += 1
         phi = self._potential(self.angles)
-        info = {"invalid": False, "blocked": False, "sim_time": 0.0}
+        info = {"invalid": False, "blocked": False, "revisit": False, "sim_time": 0.0}
         reward = STEP_PENALTY
         if not self._mask[action]:
             info["invalid"] = True
@@ -228,6 +259,11 @@ class RubikSnakeEnv(gym.Env):
                 self.angles = twist(self.angles, joint, direction)
                 self._mask = valid_move_mask(self.angles)
                 self._blocked[:] = False
+                key = self.angles.tobytes()
+                info["revisit"] = key in self._visited
+                if info["revisit"] and self.revisit:
+                    reward += REVISIT_PENALTY
+                self._visited.add(key)
             else:
                 self._blocked[action] = True
                 info["blocked"] = True

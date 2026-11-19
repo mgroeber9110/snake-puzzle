@@ -1,0 +1,7 @@
+{
+  "executor": "mujoco (stiff servos)",
+  "init": "runs/stage2/model_final.zip, input layer widened for the revisit flags (new weights zero)",
+  "observation": "adds revisit: per move, whether it leads to a shape visited earlier in the episode; revisits cost 0.05",
+  "targets": "mix: 30% near (up to 28 moves), 25% flat (up to 14 half turns), 30% generated compact 3D, 15% Ball/Cobra/Snowflake from the stick",
+  "model_final": "model after about 271k steps (46 minutes on 4 cores); run stopped there, planned 600k"
+}

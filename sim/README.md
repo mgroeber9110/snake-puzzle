@@ -173,3 +173,38 @@ in MuJoCo, 200 steps, once with the most likely action and 8 times with sampled 
 - Physics check: of the 67 shapes the stage-3 network reached with the most likely action, 65 are also reached with
   the exact sweep check; 2 rely on a move that MuJoCo completes and the exact check blocks. In the other direction
   MuJoCo blocked 9 moves that the exact check finds free, so in compact shapes it is slightly too strict.
+
+## Stage 4: learning to avoid loops
+
+The failures on unseen shapes were loops, so the network now sees, for each move, whether it would lead back to a
+shape it has already been in during the episode (`revisit=True`, observation key `revisit`), and a revisit costs
+0.05. The behaviour is learned: nothing outside the network forbids a revisit.
+
+**Run.** `runs/stage4/`: the stage-2 network (it generalized better than stage 3) with its input layer widened by two
+channels per joint, the new weights set to zero so it starts out exactly as before. Trained with a fixed mix of
+targets: 30 % near shapes, 25 % flat shapes, 30 % generated compact 3D shapes (`compact_walk`, the same generator as
+the compact test shapes, but other random shapes) and 15 % Ball, Cobra and Snowflake from the stick
+(`--target-kind mix --start-depth 14 --revisit --init runs/stage2/model_final.zip --lr 1e-4`). Stopped after 271k
+steps, 46 minutes, with 98-99 % success over all training episodes.
+
+**Unseen shapes, most likely action only** (`runs/unseen/eval.md`):
+
+| Shapes | Stage 2 | Stage 3 | Stage 4 | Stage 4, exact sweep check |
+|---|---|---|---|---|
+| compact3d | 10/20 | 5/20 | 16/20 | 15/20 |
+| far60 | 17/20 | 13/20 | 20/20 | 20/20 |
+| far100 | 17/20 | 17/20 | 20/20 | 20/20 |
+| flat18 | 19/19 | 18/19 | 19/19 | 19/19 |
+| flat24 | 19/20 | 14/20 | 20/20 | 19/20 |
+| **total** | 82/99 | 67/99 | **95/99** | 93/99 |
+
+- With 8 sampled attempts stage 4 reaches all 99.
+- Successful episodes revisit a shape 0.14 times on average. Three of the four failures still go round in circles
+  (larger ones that the per-move flag does not rule out); the fourth wanders without revisiting.
+- The price is detours: stage 4 needs 1.38 times the angle distance on compact shapes (stage 2 and 3: 1.00-1.03) and
+  1.02-1.19 on the others.
+- Ball, Cobra and Snowflake are still reached from the stick: Ball in 29 moves (4 blocked tries; stage 3: 25),
+  Cobra in 18, Snowflake in 23. Generated flat and near shapes: 98-100 % with the most likely action
+  (`runs/stage4/eval.md`).
+- Caveat: compact shapes from the same generator were part of training, though not these 20. The long random walks
+  and the larger flat shapes are outside the training range.

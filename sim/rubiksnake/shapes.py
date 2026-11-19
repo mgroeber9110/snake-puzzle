@@ -70,6 +70,39 @@ def flat_walk(rng, half_turns: int, num_wedges: int = 24, executor=None) -> np.n
     return angles
 
 
+def gyration(angles) -> float:
+    """Radius of gyration of the occupied cells (small = compact)."""
+    cells, _ = forward_kinematics(angles)
+    c = cells - cells.mean(0)
+    return float(np.sqrt((c * c).sum(1).mean()))
+
+
+def compact_walk(rng, executor=None, steps: int = 80, beta: float = 3.0, num_wedges: int = 24):
+    """Compact 3D shapes: a random walk from the stick that prefers moves making
+    the shape more compact; returns the most compact state after at least 20 moves.
+    Every move has a valid end state and, with an executor, is completed by it."""
+    a = straight(num_wedges)
+    best, best_rg = a.copy(), np.inf
+    for k in range(steps):
+        acts = np.flatnonzero(valid_move_mask(a))
+        if len(acts) == 0:
+            break
+        cand = [(int(x // 2), 1 - 2 * int(x % 2)) for x in acts]
+        rg = np.array([gyration(twist(a, j, d)) for j, d in cand])
+        p = np.exp(-beta * (rg - rg.min()))
+        order = rng.choice(len(cand), size=len(cand), replace=False, p=p / p.sum())
+        for i in order:
+            j, d = cand[i]
+            if executor is None or executor.execute(a, j, d).done:
+                a = twist(a, j, d)
+                break
+        else:
+            break
+        if k >= 20 and gyration(a) < best_rg:
+            best, best_rg = a.copy(), gyration(a)
+    return best
+
+
 def is_flat_in_layer(angles) -> bool:
     """All wedge cells in one lattice layer (like the straight stick)."""
     cells, _ = forward_kinematics(angles)

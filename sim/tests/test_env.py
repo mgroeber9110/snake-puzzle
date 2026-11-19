@@ -115,3 +115,23 @@ def test_inset_wedge_moves_every_face_inward():
     assert np.allclose(np.abs(v[:, 0]), 0.49)
     assert np.isclose(v[:, 1].min(), -0.49) and np.isclose(v[:, 2].min(), -0.49)
     assert np.isclose((v[:, 1] + v[:, 2]).max(), -0.01 * np.sqrt(2))
+
+
+def test_revisit_flags_and_penalty():
+    env = RubikSnakeEnv(executor="none", target_depth=6, revisit=True)
+    obs, _ = env.reset(seed=1)
+    assert not obs["revisit"].any()
+    a = int(np.flatnonzero(env.action_masks())[0])
+    obs, _, _, _, info = env.step(a)
+    assert not info["revisit"]
+    # turning back leads to the start shape, which was visited
+    back = a ^ 1
+    assert obs["revisit"][back] and obs["revisit"].sum() == 1
+    _, r, _, _, info = env.step(back)
+    assert info["revisit"]
+    # same transitions without the flag: the only difference is the revisit penalty
+    env2 = RubikSnakeEnv(executor="none", target_depth=6)
+    env2.reset(seed=1)
+    env2.step(a)
+    _, r2, _, _, _ = env2.step(back)
+    assert np.isclose(r - r2, -0.05)
