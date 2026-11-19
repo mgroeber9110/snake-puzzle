@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Rubik's Snake in VR and AR (WebXR, e.g. Meta Quest browser): shape display, replay of the trained controller, Wolter notation.">
+    <meta name="keywords" content="Rubik's Snake, WebXR, VR, AR, Meta Quest, Three.js">
+    <title>Rubik's Snake XR</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            pointer-events: none;
+            user-select: none;
+            max-width: 320px;
+            max-height: calc(100vh - 80px);
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        h1 { margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        p { margin: 5px 0; font-size: 0.9rem; color: #ccc; }
+        .status { font-weight: bold; color: #4ade80; }
+        .error { color: #f87171; transition: color 0.3s; }
+        .section { margin-top: 15px; pointer-events: auto; }
+        .section + .section { border-top: 1px solid #444; padding-top: 10px; }
+        .row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+        label, .small { display: block; font-size: 0.8rem; color: #888; margin-bottom: 4px; }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        button:hover { background: #2563eb; }
+        button:active { transform: scale(0.95); }
+        button:disabled { background: #444; color: #888; cursor: default; transform: none; }
+        button.stop { background: #ef4444; }
+        button.stop:hover { background: #dc2626; }
+        button.xr { background: #16a34a; font-size: 1rem; padding: 10px 18px; }
+        button.xr:hover { background: #15803d; }
+        button.xr:disabled { background: #444; color: #888; }
+        #xr-note { font-size: 0.8rem; color: #fbbf24; margin-top: 6px; }
+        select, input[type=file], textarea {
+            width: 100%;
+            box-sizing: border-box;
+            background: #111;
+            color: white;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 4px 6px;
+            font-size: 0.8rem;
+        }
+        textarea { font-family: monospace; user-select: text; }
+        input[type=range] { flex: 1; }
+        #replay-info { font-size: 0.8rem; color: #ccc; margin-top: 6px; }
+        #replay-info .ok { color: #4ade80; font-weight: bold; }
+        #replay-info .bad { color: #f87171; font-weight: bold; }
+        #replay-info .blocked { color: #fbbf24; }
+        .instructions { font-size: 0.8rem; color: #888; }
+        .instructions p { font-size: 0.8rem; color: #888; }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <h1>Rubik's Snake XR</h1>
+        <p>Status: <span id="status" class="status">Loading...</span></p>
+        <p>Moves: <span id="move-count">0</span></p>
+
+        <div class="section">
+            <div class="row">
+                <button id="btn-vr" class="xr" disabled>Enter VR</button>
+                <button id="btn-ar" class="xr" disabled>Enter AR</button>
+            </div>
+            <div id="xr-note"></div>
+        </div>
+
+        <div class="section">
+            <label for="replay-select">Replay a trajectory</label>
+            <select id="replay-select"><option value="">(choose an example)</option></select>
+            <div class="row">
+                <input type="file" id="replay-file" accept=".json,application/json" aria-label="Load trajectory file">
+            </div>
+            <div class="row">
+                <button id="btn-replay-play">Play</button>
+                <button id="btn-replay-step">Step</button>
+                <button id="btn-replay-reset">Reset</button>
+            </div>
+            <div class="row">
+                <span class="small" style="margin:0">Speed</span>
+                <input type="range" id="replay-speed" min="1" max="10" value="4" aria-label="Replay speed">
+            </div>
+            <div class="row">
+                <label style="margin:0"><input type="checkbox" id="show-target" checked> Show target</label>
+            </div>
+            <div id="replay-info">No trajectory loaded.</div>
+        </div>
+
+        <div class="section">
+            <label for="notation-input">Shape (<a href="http://thomas-wolter.de/rubik_notation_en.html" target="_blank" style="color:#888">Wolter notation</a>)</label>
+            <textarea id="notation-input" rows="3" spellcheck="false" placeholder="straight (e.g. 2R2-3L2-4L2)"></textarea>
+            <div class="row">
+                <button id="btn-set-shape">Set Shape</button>
+                <button id="btn-copy-shape">Copy</button>
+                <button id="btn-start">Auto</button>
+                <button id="btn-stop" class="stop">Stop</button>
+            </div>
+        </div>
+
+        <div class="section instructions">
+            <p>• Desktop: left click a segment twists +90°, right click −90°, drag to orbit.</p>
+            <p>• Headset: trigger (or pinch) on a segment twists, grip on a segment twists the other way,
+               grip elsewhere grabs the snake or the panel. Thumbstick: left/right turns the snake, up/down scales it.</p>
+            <p>• Everything here is also on the panel inside VR/AR. Shapes can be typed here before entering.</p>
+        </div>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+        import * as K from './kinematics.js';
+        import { isTwistFree } from './sweep.js';
+        import { parseNotation, toNotation } from './notation.js';
+
+        // --- Configuration ---
+        // The model is built in lattice units (one cube = 1) and scaled to metres
+        // by `model.scale`; `cubeSize` is the edge of one lattice cube in metres.
+        const SEGMENT_COUNT = K.NUM_WEDGES;
+        const ANIMATION_SPEED = 0.1; // progress per 60 Hz frame
+        const DEFAULT_CUBE_SIZE = 0.04;
+        const MIN_CUBE_SIZE = 0.01, MAX_CUBE_SIZE = 0.2;
+        const TABLE_HEIGHT = 0.8; // desktop / initial placement
+        const COLORS = {
+            A: 0xcc3333, // Red
+            B: 0xffffff, // White
+            HOVER: 0xffd700, // Gold
+            ERROR: 0xff0000 // Bright Red
+        };
+
+        // --- Global State ---
+        let scene, camera, renderer, controls;
+        let stage, model, pivot;     // placement (grabbable) -> scale -> centring offset
+        let snake, ghost, panel;
+        let floorGroup, table, shadowCatcher, dirLight;
+        let isAnimating = false;
+        let isAutoPlaying = false;
+        let moveCount = 0;
+        let cubeSize = DEFAULT_CUBE_SIZE;
+        let twistDirection = 1;      // direction of trigger / pinch twists
+        let xrMode = null;           // null (desktop), 'immersive-vr' or 'immersive-ar'
+        let placeOnNextFrame = false;
+        let placing = false;         // AR: next trigger with a surface hit places the snake
+        const replayList = [];       // {url, label} from replays/index.json
+        let replayListIndex = -1;
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2(-10, -10);
+        const collisionObjects = [];
+        const hovered = new Set();   // segment meshes under a pointer
+        const clock = new THREE.Clock();
+
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.xr.enabled = true;
+            renderer.xr.setReferenceSpaceType('local-floor');
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            // Lights
+            scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+            dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.set(1024, 1024);
+            dirLight.shadow.bias = -0.0005;
+            dirLight.shadow.normalBias = 0.002;
+            scene.add(dirLight);
+            scene.add(dirLight.target);
+
+            // VR surroundings: floor with grid (hidden in AR)
+            floorGroup = new THREE.Group();
+            const floor = new THREE.Mesh(
+                new THREE.CircleGeometry(12, 64),
+                new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 }));
+            floor.rotation.x = -Math.PI / 2;
+            floorGroup.add(floor);
+            const grid = new THREE.GridHelper(24, 48, 0x3a3a3a, 0x262626);
+            grid.position.y = 0.001;
+            floorGroup.add(grid);
+            scene.add(floorGroup);
+
+            // Snake placement: stage origin is the bottom centre of the shape.
+            stage = new THREE.Group();
+            model = new THREE.Group();
+            pivot = new THREE.Group();
+            stage.add(model);
+            model.add(pivot);
+            scene.add(stage);
+
+            // A small table top in VR, an invisible shadow catcher in AR.
+            table = new THREE.Mesh(
+                new THREE.CylinderGeometry(1, 1, 0.02, 64),
+                new THREE.MeshStandardMaterial({ color: 0x3b3b46, roughness: 0.6 }));
+            table.position.y = -0.0105;
+            table.receiveShadow = true;
+            stage.add(table);
+            shadowCatcher = new THREE.Mesh(
+                new THREE.CircleGeometry(1, 64),
+                new THREE.ShadowMaterial({ opacity: 0.35, depthWrite: false }));
+            shadowCatcher.rotation.x = -Math.PI / 2;
+            shadowCatcher.position.y = 0.0005;
+            shadowCatcher.receiveShadow = true;
+            shadowCatcher.visible = false;
+            stage.add(shadowCatcher);
+
+            snake = new Snake(pivot);
+            ghost = new Ghost(pivot);
+            panel = new Panel();
+            scene.add(panel.mesh);
+            panel.mesh.visible = false;
+
+            updateViewOffset();
+            initXR();
+            setEnvironment(null);
+            setCubeSize(cubeSize);
+            resetStage();
+            recenter();
+            frameView();
+
+            window.snakeView = { scene, camera, renderer, snake, ghost, panel, stage, model, pivot, controllers, // for automated checks
+                get xrMode() { return xrMode; }, get cubeSize() { return cubeSize; },
+                hits: () => controllers.map(c => c.userData.hit && [c.userData.hit.kind, Math.round(c.userData.hit.x ?? c.userData.hit.index), Math.round(c.userData.hit.y ?? 0)]) };
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('pointermove', onPointerMove);
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            renderer.domElement.addEventListener('pointerleave', () => pointer.set(-10, -10));
+            window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            document.getElementById('btn-start').addEventListener('click', startAuto);
+            document.getElementById('btn-stop').addEventListener('click', stopAuto);
+            document.getElementById('btn-set-shape').addEventListener('click', setShapeFromInput);
+            document.getElementById('notation-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); setShapeFromInput(); }
+            });
+            document.getElementById('btn-copy-shape').addEventListener('click', () => {
+                navigator.clipboard?.writeText(toNotation(snake.angles));
+                updateStatus("Shape copied.");
+            });
+            showNotation();
+            initReplay();
+
+            renderer.setAnimationLoop(render);
+            updateStatus("Ready.");
+            gameLoop();
+        }
+
+        function onWindowResize() {
+            if (renderer.xr.isPresenting) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            updateViewOffset();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Keep the scene centred in the area right of the UI panel on wide screens.
+        function updateViewOffset() {
+            const ui = document.getElementById('ui');
+            const w = window.innerWidth, h = window.innerHeight;
+            const right = ui.style.display === 'none' ? 0 : ui.getBoundingClientRect().right;
+            if (w > 2 * right && right > 0) camera.setViewOffset(w, h, -right / 2, 0, w, h);
+            else camera.clearViewOffset();
+            camera.updateProjectionMatrix();
+        }
+
+        function onPointerMove(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = - (event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            if (xrMode) return;
+            raycaster.setFromCamera(pointer, camera);
+            const hit = raycaster.intersectObjects(collisionObjects)[0];
+            if (hit) twistSegment(hit.object.userData.segmentIndex, event.button === 2 ? -1 : 1);
+        }
+
+        // --- Geometry ---
+        function createWedgeGeometry(size) {
+            const h = size / 2;
+            const vertices = new Float32Array([
+                -h, -h,  h, // 0: BLF
+                 h, -h,  h, // 1: BRF
+                 h, -h, -h, // 2: BRB
+                -h, -h, -h, // 3: BLB
+                -h,  h, -h, // 4: TLB
+                 h,  h, -h, // 5: TRB
+            ]);
+            const indices = [
+                0, 2, 1,  0, 3, 2,   // bottom
+                3, 4, 5,  3, 5, 2,   // back
+                0, 4, 3,             // left
+                1, 2, 5,             // right
+                0, 1, 5,  0, 5, 4    // slope
+            ];
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            geometry.setIndex(indices);
+            geometry.computeVertexNormals();
+            return geometry;
+        }
+
+        function setGroupPose(group, pose, shiftX = 0) {
+            const r = pose.rotation;
+            const p = pose.position;
+            group.matrix.set(
+                r[0], r[1], r[2], p[0] + shiftX,
+                r[3], r[4], r[5], p[1],
+                r[6], r[7], r[8], p[2],
+                0, 0, 0, 1
+            );
+            group.matrixWorldNeedsUpdate = true;
+        }
+
+        // --- Snake (rendering only; poses come from the kinematics module) ---
+        class Snake {
+            constructor(parent) {
+                this.segments = [];
+                this.groups = [];
+                this.angles = K.straight(SEGMENT_COUNT);
+                this.root = new THREE.Group();
+                this.root.rotation.x = Math.PI / 2; // same orientation as snake3/snake4
+
+                const geo = createWedgeGeometry(1);
+                const mat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.35, side: THREE.DoubleSide });
+                this.matA = mat(COLORS.A);
+                this.matB = mat(COLORS.B);
+                this.matHover = mat(COLORS.HOVER);
+                this.matError = new THREE.MeshStandardMaterial({ color: COLORS.ERROR, roughness: 0.2, emissive: 0x550000, side: THREE.DoubleSide });
+
+                const edgeGeo = new THREE.EdgesGeometry(geo);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+                const collisionGeo = new THREE.BoxGeometry(0.9, 1.2, 0.9);
+                const collisionMat = new THREE.MeshBasicMaterial({ visible: false });
+
+                for (let i = 0; i < SEGMENT_COUNT; i++) {
+                    const group = new THREE.Group();
+                    group.matrixAutoUpdate = false;
+                    const original = i % 2 === 0 ? this.matA : this.matB;
+                    const mesh = new THREE.Mesh(geo, original);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    mesh.userData.originalMat = original;
+                    mesh.userData.flashUntil = 0;
+                    mesh.add(new THREE.LineSegments(edgeGeo, edgeMat));
+                    group.add(mesh);
+
+                    const box = new THREE.Mesh(collisionGeo, collisionMat);
+                    box.userData.segmentIndex = i;
+                    collisionObjects.push(box);
+                    group.add(box);
+
+                    this.root.add(group);
+                    this.segments.push(mesh);
+                    this.groups.push(group);
+                }
+                this.setPose(this.angles);
+                parent.add(this.root);
+            }
+
+            setPose(angles) {
+                K.forwardKinematics(angles).forEach((pose, i) => setGroupPose(this.groups[i], pose));
+            }
+
+            // Hover / error colours, recomputed every frame.
+            updateMaterials(now) {
+                this.segments.forEach(mesh => {
+                    mesh.material = now < mesh.userData.flashUntil ? this.matError
+                        : hovered.has(mesh) ? this.matHover : mesh.userData.originalMat;
+                });
+            }
+        }
+
+        // --- Target ghost: translucent copy of the target shape beside the snake ---
+        class Ghost {
+            constructor(parent) {
+                this.root = new THREE.Group();
+                this.root.rotation.x = Math.PI / 2;
+                this.groups = [];
+                const geo = createWedgeGeometry(1);
+                const mat = new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.22, depthWrite: false });
+                const edges = new THREE.EdgesGeometry(geo);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.8 });
+                for (let i = 0; i < SEGMENT_COUNT; i++) {
+                    const group = new THREE.Group();
+                    group.matrixAutoUpdate = false;
+                    group.add(new THREE.Mesh(geo, mat));
+                    group.add(new THREE.LineSegments(edges, edgeMat));
+                    this.root.add(group);
+                    this.groups.push(group);
+                }
+                this.root.visible = false;
+                parent.add(this.root);
+            }
+
+            // `start`: the snake's start shape; the ghost is placed beside it along X.
+            show(angles, start) {
+                const poses = K.forwardKinematics(angles);
+                const xs = poses.map(p => p.position[0]);
+                const startXs = K.forwardKinematics(start).map(p => p.position[0]);
+                const shift = Math.max(...startXs) - Math.min(...xs) + 4;
+                poses.forEach((pose, i) => setGroupPose(this.groups[i], pose, shift));
+                this.root.visible = targetShown();
+            }
+
+            hide() { this.root.visible = false; }
+        }
+
+        // --- Placement ---
+
+        // Put the bottom centre of the snake (and the ghost, if shown) at the stage
+        // origin, and size the table to the shape.
+        function recenter() {
+            pivot.position.set(0, 0, 0);
+            pivot.updateMatrixWorld(true);
+            // Bounding box in pivot (lattice) units; wedges are axis aligned there.
+            const toPivot = pivot.matrixWorld.clone().invert();
+            const box = new THREE.Box3();
+            const roots = [snake.root];
+            if (ghost.root.visible) roots.push(ghost.root);
+            for (const root of roots) {
+                root.traverse(c => {
+                    if (!c.isMesh || c.material.visible === false) return;
+                    if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+                    const m = toPivot.clone().multiply(c.matrixWorld);
+                    box.union(c.geometry.boundingBox.clone().applyMatrix4(m));
+                });
+            }
+            const center = box.getCenter(new THREE.Vector3());
+            pivot.position.set(-center.x, -box.min.y, -center.z);
+            const size = box.getSize(new THREE.Vector3());
+            const radius = 0.5 * Math.hypot(size.x, size.z) + 1;
+            table.scale.set(radius * cubeSize, 1, radius * cubeSize);
+            shadowCatcher.scale.setScalar(radius * cubeSize * 1.3);
+            stage.userData.height = size.y;
+            stage.userData.radius = radius;
+            updateLight();
+        }
+
+        function setCubeSize(size) {
+            cubeSize = THREE.MathUtils.clamp(size, MIN_CUBE_SIZE, MAX_CUBE_SIZE);
+            model.scale.setScalar(cubeSize);
+            if (stage.userData.radius) {
+                table.scale.set(stage.userData.radius * cubeSize, 1, stage.userData.radius * cubeSize);
+                shadowCatcher.scale.setScalar(stage.userData.radius * cubeSize * 1.3);
+            }
+            updateLight();
+            panel?.markDirty();
+        }
+
+        function updateLight() {
+            const r = Math.max(stage.userData.radius || 10, stage.userData.height || 2) * cubeSize * 1.4;
+            const pos = stage.getWorldPosition(new THREE.Vector3());
+            dirLight.position.copy(pos).add(new THREE.Vector3(r, 3 * r, r * 0.7));
+            dirLight.target.position.copy(pos);
+            const cam = dirLight.shadow.camera;
+            cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+            cam.near = 0.01; cam.far = 8 * r;
+            cam.updateProjectionMatrix();
+        }
+
+        function resetStage() {
+            stage.position.set(0, TABLE_HEIGHT, 0);
+            stage.quaternion.identity();
+            updateLight();
+        }
+
+        // Desktop: look at the snake from the front, slightly above.
+        function frameView() {
+            if (xrMode) return;
+            const h = (stage.userData.height || 2) * cubeSize;
+            const r = Math.max((stage.userData.radius || 10) * cubeSize, h);
+            const target = stage.position.clone().add(new THREE.Vector3(0, h / 2, 0));
+            const dist = r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.1;
+            controls.target.copy(target);
+            camera.position.copy(target).add(new THREE.Vector3(0.35, 0.6, 1).normalize().multiplyScalar(dist));
+            camera.lookAt(target);
+            controls.update();
+        }
+
+        // XR: put the snake on an imaginary table in front of the viewer and the
+        // panel to the left, both facing the viewer.
+        const head = { position: new THREE.Vector3(0, 1.6, 0), quaternion: new THREE.Quaternion() };
+
+        function trackHead(frame) {
+            const pose = frame && frame.getViewerPose(renderer.xr.getReferenceSpace());
+            if (!pose) return false;
+            const { position: p, orientation: q } = pose.transform;
+            head.position.set(p.x, p.y, p.z);
+            head.quaternion.set(q.x, q.y, q.z, q.w);
+            return true;
+        }
+
+        function placeInFront() {
+            const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(head.quaternion);
+            dir.y = 0;
+            if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
+            dir.normalize();
+            const yaw = Math.atan2(-dir.x, -dir.z);
+            const eye = head.position;
+            const tableY = Math.max(0.6, eye.y - 0.45);
+            stage.position.copy(eye).addScaledVector(dir, 0.65);
+            stage.position.y = tableY;
+            stage.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+
+            const left = new THREE.Vector3(dir.z, 0, -dir.x); // 90 degrees to the left of dir
+            panel.mesh.position.copy(eye).addScaledVector(dir, 0.5).addScaledVector(left, 0.5);
+            panel.mesh.position.y = eye.y - 0.15;
+            panel.mesh.lookAt(eye.x, panel.mesh.position.y, eye.z);
+            updateLight();
+        }
+
+        // --- XR session handling ---
+        const controllers = [];
+        let hitTestSources = new Map(); // XRInputSource -> XRHitTestSource
+        let reticle;
+        const hitTestSupported = { 'immersive-ar': false };
+
+        function initXR() {
+            const vrBtn = document.getElementById('btn-vr');
+            const arBtn = document.getElementById('btn-ar');
+            const note = document.getElementById('xr-note');
+            vrBtn.addEventListener('click', () => startSession('immersive-vr'));
+            arBtn.addEventListener('click', () => startSession('immersive-ar'));
+            if (!('xr' in navigator)) {
+                note.innerText = window.isSecureContext
+                    ? 'WebXR is not available in this browser. Open this page in the Meta Quest browser.'
+                    : 'WebXR needs HTTPS (or localhost). Serve the page over HTTPS to use it on the headset.';
+            } else {
+                navigator.xr.isSessionSupported('immersive-vr').then(ok => { vrBtn.disabled = !ok; updateXrNote(); });
+                navigator.xr.isSessionSupported('immersive-ar').then(ok => { arBtn.disabled = !ok; updateXrNote(); });
+            }
+            function updateXrNote() {
+                note.innerText = vrBtn.disabled && arBtn.disabled ? 'No VR/AR headset found.' : '';
+            }
+
+            // Controllers: pointer rays, controller and hand models.
+            const controllerModels = new XRControllerModelFactory();
+            const handModels = new XRHandModelFactory();
+            const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+            for (let i = 0; i < 2; i++) {
+                const c = renderer.xr.getController(i);
+                const ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6 }));
+                ray.scale.z = 1;
+                c.add(ray);
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+                dot.visible = false;
+                scene.add(dot);
+                c.userData = { ray, dot, inputSource: null, hit: null, grabbing: null };
+                c.addEventListener('connected', (e) => {
+                    c.userData.inputSource = e.data;
+                    ray.visible = e.data.targetRayMode === 'tracked-pointer';
+                    requestHitTestSource(e.data);
+                });
+                c.addEventListener('disconnected', () => {
+                    releaseGrab(c);
+                    const src = hitTestSources.get(c.userData.inputSource);
+                    if (src) src.cancel?.();
+                    hitTestSources.delete(c.userData.inputSource);
+                    c.userData.inputSource = null;
+                    dot.visible = false;
+                });
+                c.addEventListener('select', () => onSelect(c));
+                c.addEventListener('squeezestart', () => onSqueezeStart(c));
+                c.addEventListener('squeezeend', () => releaseGrab(c));
+                scene.add(c);
+                controllers.push(c);
+
+                const grip = renderer.xr.getControllerGrip(i);
+                grip.add(controllerModels.createControllerModel(grip));
+                scene.add(grip);
+                const hand = renderer.xr.getHand(i);
+                hand.add(handModels.createHandModel(hand, 'mesh'));
+                scene.add(hand);
+            }
+
+            reticle = new THREE.Mesh(
+                new THREE.RingGeometry(0.03, 0.04, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
+
+            renderer.xr.addEventListener('sessionstart', () => {
+                document.getElementById('ui').style.display = 'none';
+                panel.mesh.visible = true;
+                placeOnNextFrame = true;
+                panel.markDirty();
+            });
+            renderer.xr.addEventListener('sessionend', () => {
+                xrMode = null;
+                placing = false;
+                reticle.visible = false;
+                hitTestSources = new Map();
+                controllers.forEach(c => { releaseGrab(c); c.userData.dot.visible = false; });
+                document.getElementById('ui').style.display = '';
+                panel.mesh.visible = false;
+                setEnvironment(null);
+                onWindowResize();
+                resetStage();
+                frameView();
+            });
+        }
+
+        async function startSession(mode) {
+            if (renderer.xr.isPresenting) return;
+            try {
+                const session = await navigator.xr.requestSession(mode, {
+                    requiredFeatures: ['local-floor'],
+                    optionalFeatures: mode === 'immersive-ar' ? ['hand-tracking', 'hit-test'] : ['hand-tracking'],
+                });
+                xrMode = mode;
+                hitTestSupported[mode] = mode === 'immersive-ar' && !!session.requestHitTestSource;
+                setEnvironment(mode);
+                await renderer.xr.setSession(session);
+            } catch (e) {
+                xrMode = null;
+                setEnvironment(null);
+                updateStatus(`Could not start ${mode === 'immersive-ar' ? 'AR' : 'VR'}: ${e.message}`, true);
+            }
+        }
+
+        function requestHitTestSource(inputSource) {
+            const session = renderer.xr.getSession();
+            if (!session || xrMode !== 'immersive-ar' || !session.requestHitTestSource) return;
+            if (inputSource.targetRayMode !== 'tracked-pointer') return;
+            session.requestHitTestSource({ space: inputSource.targetRaySpace })
+                .then(src => hitTestSources.set(inputSource, src))
+                .catch(() => { hitTestSupported['immersive-ar'] = false; panel.markDirty(); });
+        }
+
+        // VR: dark room with floor and a table; AR: passthrough with a shadow on the real surface.
+        function setEnvironment(mode) {
+            const ar = mode === 'immersive-ar';
+            scene.background = ar ? null : new THREE.Color(0x202024);
+            scene.fog = ar ? null : new THREE.Fog(0x202024, 6, 20);
+            floorGroup.visible = !ar;
+            table.visible = !ar;
+            shadowCatcher.visible = ar;
+            panel?.markDirty();
+        }
+
+        function exitXR() {
+            renderer.xr.getSession()?.end();
+        }
+
+        function startPlacing() {
+            if (!hitTestSupported['immersive-ar']) return;
+            placing = !placing;
+            updateStatus(placing ? 'Point at a surface and press the trigger.' : 'Ready.');
+        }
+
+        // --- XR input ---
+
+        // What a controller ray points at: the panel (with canvas coordinates) or a segment.
+        function controllerHit(c) {
+            const m = new THREE.Matrix4().extractRotation(c.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(m);
+            const targets = panel.mesh.visible ? [panel.mesh, ...collisionObjects] : collisionObjects;
+            const hit = raycaster.intersectObjects(targets, false)[0];
+            if (!hit) return null;
+            if (hit.object === panel.mesh) {
+                return { kind: 'panel', point: hit.point, distance: hit.distance,
+                    x: hit.uv.x * panel.canvas.width, y: (1 - hit.uv.y) * panel.canvas.height };
+            }
+            return { kind: 'segment', index: hit.object.userData.segmentIndex, point: hit.point, distance: hit.distance };
+        }
+
+        function pulse(c, intensity, ms) {
+            const act = c.userData.inputSource?.gamepad?.hapticActuators?.[0];
+            act?.pulse?.(intensity, ms);
+        }
+
+        function onSelect(c) {
+            const hit = c.userData.hit;
+            if (placing && c.userData.placeMatrix) {
+                const m = c.userData.placeMatrix;
+                stage.position.setFromMatrixPosition(m);
+                const eye = head.position;
+                const yaw = Math.atan2(eye.x - stage.position.x, eye.z - stage.position.z);
+                stage.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                placing = false;
+                updateLight();
+                updateStatus('Placed.');
+                pulse(c, 0.4, 40);
+                return;
+            }
+            if (!hit) return;
+            if (hit.kind === 'panel') {
+                if (panel.press(hit.x, hit.y)) pulse(c, 0.3, 20);
+            } else {
+                twistSegment(hit.index, twistDirection, c);
+            }
+        }
+
+        function onSqueezeStart(c) {
+            const hit = c.userData.hit;
+            if (hit && hit.kind === 'segment') {
+                twistSegment(hit.index, -twistDirection, c);
+                return;
+            }
+            // Grab the panel or the snake (anywhere) and carry it with the controller.
+            const target = hit && hit.kind === 'panel' ? panel.mesh : stage;
+            if (controllers.some(o => o !== c && o.userData.grabbing === target)) return;
+            c.attach(target);
+            c.userData.grabbing = target;
+            pulse(c, 0.2, 20);
+        }
+
+        function releaseGrab(c) {
+            const target = c.userData.grabbing;
+            if (!target) return;
+            scene.attach(target);
+            c.userData.grabbing = null;
+            if (target === stage) {
+                // Keep the snake upright: drop pitch and roll, keep the heading.
+                const e = new THREE.Euler().setFromQuaternion(stage.quaternion, 'YXZ');
+                stage.quaternion.setFromEuler(new THREE.Euler(0, e.y, 0, 'YXZ'));
+                updateLight();
+            }
+        }
+
+        // Thumbsticks: x turns the snake about the vertical axis, y scales it.
+        function handleThumbsticks(dt) {
+            for (const c of controllers) {
+                const gp = c.userData.inputSource?.gamepad;
+                if (!gp || gp.axes.length < 4) continue;
+                const x = gp.axes[2], y = gp.axes[3];
+                if (Math.abs(x) > 0.25) {
+                    stage.rotateY(-x * 1.5 * dt);
+                }
+                if (Math.abs(y) > 0.25) {
+                    const before = Math.round(cubeSize * 1000);
+                    setCubeSize(cubeSize * Math.exp(-y * 0.8 * dt));
+                    if (Math.round(cubeSize * 1000) !== before) panel.markDirty();
+                }
+            }
+        }
+
+        function updateControllers(frame) {
+            hovered.clear();
+            const refSpace = renderer.xr.getReferenceSpace();
+            let reticleShown = false;
+            for (const c of controllers) {
+                const { ray, dot } = c.userData;
+                c.userData.placeMatrix = null;
+                if (!c.userData.inputSource || c.userData.grabbing) {
+                    c.userData.hit = null;
+                    dot.visible = false;
+                    ray.scale.z = 0.3;
+                    continue;
+                }
+                const hit = controllerHit(c);
+                c.userData.hit = hit;
+                if (hit) {
+                    ray.scale.z = hit.distance;
+                    dot.position.copy(hit.point);
+                    dot.visible = true;
+                    if (hit.kind === 'segment' && hit.index > 0 && canTwist()) hovered.add(snake.segments[hit.index]);
+                } else {
+                    ray.scale.z = 1.5;
+                    dot.visible = false;
+                }
+                if (placing && frame && refSpace) {
+                    const src = hitTestSources.get(c.userData.inputSource);
+                    const results = src ? frame.getHitTestResults(src) : [];
+                    const pose = results.length ? results[0].getPose(refSpace) : null;
+                    if (pose && !reticleShown) {
+                        reticle.matrix.fromArray(pose.transform.matrix);
+                        c.userData.placeMatrix = reticle.matrix.clone();
+                        reticleShown = true;
+                    }
+                }
+            }
+            reticle.visible = reticleShown;
+            panel.setHover(controllers.map(c => c.userData.hit).filter(h => h && h.kind === 'panel'));
+        }
+
+        // --- In-world control panel (canvas texture, buttons hit by the controller rays) ---
+        class Panel {
+            constructor() {
+                this.canvas = document.createElement('canvas');
+                this.canvas.width = 1024;
+                this.canvas.height = 900;
+                this.ctx = this.canvas.getContext('2d');
+                this.texture = new THREE.CanvasTexture(this.canvas);
+                this.texture.colorSpace = THREE.SRGBColorSpace;
+                this.texture.anisotropy = 4;
+                const w = 0.5, h = w * this.canvas.height / this.canvas.width;
+                this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+                    new THREE.MeshBasicMaterial({ map: this.texture, transparent: true }));
+                this.hoverIds = new Set();
+                this.pressedId = null;
+                this.pressedUntil = 0;
+                this.dirty = true;
+                const B = (id, x, y, w, h, label, action, enabled = () => true, active = () => false) =>
+                    ({ id, x, y, w, h, label, action, enabled, active });
+                const row = (y, items) => items.map(([id, label, action, enabled, active], i) =>
+                    B(id, 20 + i * 250, y, 234, 80, label, action, enabled, active));
+                this.buttons = [
+                    B('prev', 20, 125, 80, 70, () => '◀', () => cycleReplay(-1), () => replayList.length > 0),
+                    B('next', 924, 125, 80, 70, () => '▶', () => cycleReplay(1), () => replayList.length > 0),
+                    ...row(210, [
+                        ['play', () => replay.playing ? 'Pause' : 'Play', togglePlay, () => !!replay.trajectory],
+                        ['step', () => 'Step', () => { if (!replay.playing) replayStep(); }, () => !!replay.trajectory && !replay.playing],
+                        ['reset', () => 'Reset', resetReplay, () => !!replay.trajectory],
+                        ['target', () => 'Target', () => setTargetShown(!targetShown()), () => !!replay.target, () => targetShown()],
+                    ]),
+                    B('slow', 20, 425, 80, 75, () => '−', () => changeSpeed(-1)),
+                    B('fast', 410, 425, 80, 75, () => '+', () => changeSpeed(1)),
+                    B('smaller', 534, 425, 80, 75, () => '−', () => setCubeSize(cubeSize / 1.25)),
+                    B('bigger', 924, 425, 80, 75, () => '+', () => setCubeSize(cubeSize * 1.25)),
+                    ...row(520, [
+                        ['auto', () => isAutoPlaying ? 'Auto: on' : 'Auto: off', () => isAutoPlaying ? stopAuto() : startAuto(), () => true, () => isAutoPlaying],
+                        ['dir', () => twistDirection > 0 ? 'Twist +90°' : 'Twist −90°', () => { twistDirection = -twistDirection; }],
+                        ['straight', () => 'Straight', () => setShape(K.straight(SEGMENT_COUNT), 'Straight stick.'), () => canTwist()],
+                        ['recenter', () => 'Recenter', () => { recenter(); placeInFront(); }],
+                    ]),
+                    B('place', 20, 620, 484, 80, () => placing ? 'Placing… (cancel)' : 'Place on surface', startPlacing,
+                        () => xrMode === 'immersive-ar' && hitTestSupported['immersive-ar'], () => placing),
+                    B('exit', 520, 620, 484, 80, () => 'Exit ' + (xrMode === 'immersive-ar' ? 'AR' : 'VR'), exitXR),
+                ];
+            }
+
+            markDirty() { this.dirty = true; }
+
+            setHover(hits) {
+                const ids = new Set();
+                for (const h of hits) {
+                    const b = this.buttonAt(h.x, h.y);
+                    if (b) ids.add(b.id);
+                }
+                const same = ids.size === this.hoverIds.size && [...ids].every(id => this.hoverIds.has(id));
+                if (!same) { this.hoverIds = ids; this.dirty = true; }
+            }
+
+            buttonAt(x, y) {
+                return this.buttons.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h && b.enabled());
+            }
+
+            press(x, y) {
+                const b = this.buttonAt(x, y);
+                if (!b) return false;
+                b.action();
+                this.pressedId = b.id;
+                this.pressedUntil = performance.now() + 150;
+                this.dirty = true;
+                return true;
+            }
+
+            update(now) {
+                if (this.pressedId && now > this.pressedUntil) { this.pressedId = null; this.dirty = true; }
+                if (!this.dirty || !this.mesh.visible) return;
+                this.dirty = false;
+                this.draw();
+                this.texture.needsUpdate = true;
+            }
+
+            draw() {
+                const ctx = this.ctx, W = this.canvas.width, H = this.canvas.height;
+                ctx.clearRect(0, 0, W, H);
+                roundRect(ctx, 0, 0, W, H, 28);
+                ctx.fillStyle = 'rgba(12, 12, 16, 0.88)';
+                ctx.fill();
+
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'left';
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 40px "Segoe UI", sans-serif';
+                ctx.fillText("Rubik's Snake", 24, 42);
+                ctx.font = '26px "Segoe UI", sans-serif';
+                ctx.fillStyle = '#888';
+                ctx.textAlign = 'right';
+                ctx.fillText(`${xrMode === 'immersive-ar' ? 'AR' : 'VR'} · moves: ${moveCount}`, W - 24, 42);
+
+                ctx.textAlign = 'left';
+                ctx.font = 'bold 28px "Segoe UI", sans-serif';
+                ctx.fillStyle = status.error ? '#f87171' : '#4ade80';
+                ctx.fillText(fit(ctx, status.text, W - 48), 24, 92);
+
+                // Replay label between the arrows
+                ctx.font = 'bold 28px "Segoe UI", sans-serif';
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                const label = replay.trajectory ? replay.label : (replayList.length ? 'Choose a replay with ◀ ▶' : 'No replays found');
+                ctx.fillText(fit(ctx, label, 800), W / 2, 160);
+
+                // Replay info
+                ctx.textAlign = 'left';
+                ctx.font = '26px "Segoe UI", sans-serif';
+                const info = replayInfoLines();
+                info.forEach((line, i) => {
+                    ctx.fillStyle = line.color || '#ccc';
+                    ctx.fillText(fit(ctx, line.text, W - 48), 24, 320 + i * 32);
+                });
+
+                // Speed and scale values
+                ctx.fillStyle = '#ccc';
+                ctx.font = '28px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Speed ${replay.speed}`, 255, 462);
+                ctx.fillText(`Cube ${(cubeSize * 100).toFixed(1)} cm`, 769, 462);
+
+                // Buttons
+                for (const b of this.buttons) {
+                    const enabled = b.enabled();
+                    roundRect(ctx, b.x, b.y, b.w, b.h, 14);
+                    ctx.fillStyle = !enabled ? '#2a2a30'
+                        : this.pressedId === b.id ? '#1d4ed8'
+                        : b.active() ? '#16a34a'
+                        : this.hoverIds.has(b.id) ? '#60a5fa' : '#3b82f6';
+                    if (b.id === 'exit' && enabled) ctx.fillStyle = this.hoverIds.has(b.id) ? '#f87171' : '#ef4444';
+                    ctx.fill();
+                    ctx.fillStyle = enabled ? '#fff' : '#666';
+                    ctx.font = 'bold 30px "Segoe UI", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(b.label(), b.x + b.w / 2, b.y + b.h / 2 + 1);
+                }
+
+                // Shape notation
+                ctx.textAlign = 'left';
+                ctx.fillStyle = '#888';
+                ctx.font = '22px "Segoe UI", sans-serif';
+                ctx.fillText('Shape (Wolter notation)', 24, 730);
+                ctx.fillStyle = '#ddd';
+                ctx.font = '24px monospace';
+                const lines = wrap(ctx, toNotation(snake.angles) || '(straight)', W - 48).slice(0, 3);
+                lines.forEach((l, i) => ctx.fillText(l, 24, 764 + i * 30));
+                ctx.fillStyle = '#777';
+                ctx.font = '20px "Segoe UI", sans-serif';
+                ctx.fillText('Trigger/pinch: twist · Grip on segment: other way · Grip elsewhere: move · Stick: turn / scale',
+                    24, H - 22);
+            }
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        }
+
+        function fit(ctx, text, maxWidth) {
+            if (ctx.measureText(text).width <= maxWidth) return text;
+            while (text.length > 1 && ctx.measureText(text + '…').width > maxWidth) text = text.slice(0, -1);
+            return text + '…';
+        }
+
+        function wrap(ctx, text, maxWidth) {
+            const lines = [];
+            let line = '';
+            for (const part of text.split(/(?<=-)/)) { // break after the dashes of the notation
+                if (line && ctx.measureText(line + part).width > maxWidth) { lines.push(line); line = ''; }
+                line += part;
+            }
+            if (line) lines.push(line);
+            return lines;
+        }
+
+        // --- Status ---
+        const status = { text: 'Loading...', error: false };
+
+        function updateStatus(text, isError = false) {
+            status.text = text;
+            status.error = isError;
+            const el = document.getElementById('status');
+            el.innerText = text;
+            el.className = isError ? 'status error' : 'status';
+            panel?.markDirty();
+        }
+
+        function setMoveCount(n) {
+            moveCount = n;
+            document.getElementById('move-count').innerText = moveCount;
+            panel?.markDirty();
+        }
+
+        // --- Replay ---
+        // Trajectory format (docs/training-environment.md, section 5):
+        // { num_wedges, start: [angles], moves: [[joint, direction], ...],
+        //   meta: { target: "<Wolter notation>", target_name: "<optional label>", ... } }
+        // Blocked moves are shown as a short wiggle and do not change the shape.
+        const replay = {
+            trajectory: null,
+            target: null,
+            index: 0,
+            playing: false,
+            blocked: 0,
+            done: false,
+            speed: 4,
+        };
+        window.replayState = replay; // for automated checks
+
+        function targetAngles(meta) {
+            const t = meta && meta.target;
+            if (typeof t !== 'string') return null;
+            const angles = parseNotation(t);
+            if (!K.isValid(angles)) throw new Error('target shape is invalid (wedges overlap)');
+            return angles;
+        }
+
+        function sameAngles(a, b) {
+            return a.length === b.length && a.every((v, i) => v === b[i]);
+        }
+
+        function reached() {
+            if (!replay.target) return false;
+            return sameAngles(snake.angles, replay.target) ||
+                sameAngles(snake.angles, replay.target.slice().reverse());
+        }
+
+        function distance(a, b) {
+            let d = 0;
+            for (let i = 0; i < a.length; i++) {
+                const x = (((a[i] - b[i]) % 4) + 4) % 4;
+                d += Math.min(x, 4 - x);
+            }
+            return d;
+        }
+
+        function validateTrajectory(t) {
+            if (!t || !Array.isArray(t.start) || !Array.isArray(t.moves)) throw new Error('not a trajectory: needs "start" and "moves"');
+            if ((t.num_wedges ?? SEGMENT_COUNT) !== SEGMENT_COUNT || t.start.length !== SEGMENT_COUNT - 1) {
+                throw new Error(`trajectory is for ${t.num_wedges ?? t.start.length + 1} wedges, this snake has ${SEGMENT_COUNT}`);
+            }
+            const start = K.normalizeAngles(t.start);
+            if (!K.isValid(start)) throw new Error('start shape is invalid (wedges overlap)');
+            for (const m of t.moves) {
+                if (!Array.isArray(m) || !Number.isInteger(m[0]) || m[0] < 0 || m[0] >= SEGMENT_COUNT - 1 || ![1, -1].includes(m[1])) {
+                    throw new Error(`invalid move ${JSON.stringify(m)}`);
+                }
+            }
+            return start;
+        }
+
+        function targetShown() {
+            return document.getElementById('show-target').checked && !!replay.target;
+        }
+
+        function setTargetShown(on) {
+            document.getElementById('show-target').checked = on;
+            ghost.root.visible = on && !!replay.target;
+            recenter();
+            panel.markDirty();
+        }
+
+        function loadTrajectory(t, label) {
+            if (isAnimating) return;
+            let target;
+            try {
+                validateTrajectory(t);
+                target = targetAngles(t.meta);
+            } catch (e) {
+                updateStatus(`Replay: ${e.message}`, true);
+                return;
+            }
+            isAutoPlaying = false;
+            replay.trajectory = t;
+            replay.label = label;
+            replay.target = target;
+            resetReplay();
+            if (replay.target) ghost.show(replay.target, snake.angles); else ghost.hide();
+            recenter();
+            frameView();
+            updateStatus(`Loaded ${label}`);
+        }
+
+        function resetReplay() {
+            if (!replay.trajectory || isAnimating) return;
+            replay.playing = false;
+            replay.index = 0;
+            replay.blocked = 0;
+            replay.done = false;
+            snake.angles = K.normalizeAngles(replay.trajectory.start);
+            snake.setPose(snake.angles);
+            setMoveCount(0);
+            showNotation();
+            updateReplayInfo();
+        }
+
+        function replayInfoLines() {
+            if (!replay.trajectory) return [{ text: 'No trajectory loaded.' }];
+            const t = replay.trajectory;
+            const meta = t.meta || {};
+            const lines = [];
+            if (meta.policy) lines.push({ text: `Policy: ${meta.policy}` });
+            if (replay.target) lines.push({ text: `Target: ${meta.target_name ?? (meta.target || 'straight stick')}` });
+            lines.push({ text: `Move ${replay.index} of ${t.moves.length}` + (replay.blocked ? ` · ${replay.blocked} blocked` : ''),
+                color: replay.blocked ? '#fbbf24' : undefined });
+            if (replay.target) {
+                if (reached()) lines.push({ text: 'Target reached', color: '#4ade80' });
+                else if (replay.done) lines.push({ text: 'Target not reached', color: '#f87171' });
+                else {
+                    const d = Math.min(distance(snake.angles, replay.target), distance(snake.angles, replay.target.slice().reverse()));
+                    lines.push({ text: `Distance to target: ${d} quarter turns` });
+                }
+            }
+            return lines.slice(-3);
+        }
+
+        function updateReplayInfo() {
+            panel?.markDirty();
+            const el = document.getElementById('replay-info');
+            document.getElementById('btn-replay-play').innerText = replay.playing ? 'Pause' : 'Play';
+            if (!replay.trajectory) { el.innerText = 'No trajectory loaded.'; return; }
+            const t = replay.trajectory;
+            const meta = t.meta || {};
+            const lines = [`<b>${escapeHtml(replay.label)}</b>`];
+            if (meta.policy) lines.push(`Policy: ${escapeHtml(String(meta.policy))}`);
+            if (replay.target) lines.push(`Target: ${escapeHtml(String(meta.target_name ?? (meta.target || 'straight stick')))}`);
+            lines.push(`Move ${replay.index} of ${t.moves.length}` +
+                (replay.blocked ? ` · <span class="blocked">${replay.blocked} blocked</span>` : ''));
+            if (replay.target) {
+                const d = Math.min(distance(snake.angles, replay.target), distance(snake.angles, replay.target.slice().reverse()));
+                lines.push(reached() ? '<span class="ok">Target reached</span>' : `Distance to target: ${d} quarter turns`);
+            }
+            if (replay.done && replay.target && !reached()) lines.push('<span class="bad">Target not reached</span>');
+            el.innerHTML = lines.join('<br>');
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function replaySpeed() {
+            // 1 (slow) .. 10 (fast): progress per 60 Hz frame
+            return 0.03 * Math.pow(1.45, replay.speed - 1);
+        }
+
+        function changeSpeed(delta) {
+            replay.speed = THREE.MathUtils.clamp(replay.speed + delta, 1, 10);
+            document.getElementById('replay-speed').value = replay.speed;
+            panel.markDirty();
+        }
+
+        async function replayStep() {
+            const t = replay.trajectory;
+            if (!t || isAnimating || replay.index >= t.moves.length) return false;
+            const [joint, direction] = t.moves[replay.index];
+            replay.index++;
+            if (K.isValid(K.twist(snake.angles, joint, direction)) && isTwistFree(snake.angles, joint, direction)) {
+                await animateMove(joint, direction, replaySpeed());
+                setMoveCount(moveCount + 1);
+            } else {
+                replay.blocked++;
+                flashError(joint + 1);
+                await animateWiggle(joint, direction, replaySpeed());
+            }
+            if (replay.index >= t.moves.length || reached()) {
+                replay.done = true;
+                replay.playing = false;
+                updateStatus(reached() ? 'Replay finished: target reached.' : 'Replay finished.', !reached() && !!replay.target);
+            }
+            updateReplayInfo();
+            return true;
+        }
+
+        async function replayLoop() {
+            while (replay.playing && !replay.done) {
+                const moved = await replayStep();
+                if (!moved) break;
+            }
+            replay.playing = false;
+            updateReplayInfo();
+        }
+
+        function togglePlay() {
+            if (!replay.trajectory) return;
+            if (replay.done) resetReplay();
+            replay.playing = !replay.playing;
+            if (replay.playing) isAutoPlaying = false;
+            updateReplayInfo();
+            if (replay.playing) replayLoop();
+        }
+
+        async function loadReplayIndex() {
+            const select = document.getElementById('replay-select');
+            try {
+                const res = await fetch('replays/index.json');
+                if (!res.ok) throw new Error(res.statusText);
+                for (const item of await res.json()) {
+                    const opt = document.createElement('option');
+                    opt.value = 'replays/' + item.file;
+                    opt.textContent = item.label;
+                    select.appendChild(opt);
+                    replayList.push({ url: opt.value, label: item.label });
+                }
+            } catch (e) {
+                select.disabled = true;
+                select.firstChild.textContent = '(examples not found)';
+            }
+            panel.markDirty();
+        }
+
+        async function loadReplayUrl(url, label) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                loadTrajectory(await res.json(), label ?? url);
+            } catch (e) {
+                updateStatus(`Replay: could not load ${url} (${e.message})`, true);
+            }
+        }
+
+        function cycleReplay(delta) {
+            if (!replayList.length || isAnimating) return;
+            replay.playing = false;
+            replayListIndex = (replayListIndex + delta + replayList.length) % replayList.length;
+            const item = replayList[replayListIndex];
+            document.getElementById('replay-select').value = item.url;
+            loadReplayUrl(item.url, item.label);
+        }
+
+        function initReplay() {
+            const select = document.getElementById('replay-select');
+            select.addEventListener('change', () => {
+                if (!select.value) return;
+                replayListIndex = replayList.findIndex(r => r.url === select.value);
+                loadReplayUrl(select.value, select.options[select.selectedIndex].textContent);
+            });
+            document.getElementById('replay-file').addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    loadTrajectory(JSON.parse(await file.text()), file.name);
+                } catch (err) {
+                    updateStatus(`Replay: ${file.name} is not valid JSON`, true);
+                }
+            });
+            document.getElementById('btn-replay-play').addEventListener('click', togglePlay);
+            document.getElementById('btn-replay-step').addEventListener('click', () => {
+                if (replay.trajectory && !replay.playing) replayStep();
+            });
+            document.getElementById('btn-replay-reset').addEventListener('click', resetReplay);
+            document.getElementById('replay-speed').addEventListener('input', (e) => {
+                replay.speed = Number(e.target.value);
+                panel.markDirty();
+            });
+            document.getElementById('show-target').addEventListener('change', (e) => {
+                setTargetShown(e.target.checked);
+                frameView();
+            });
+            loadReplayIndex();
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('speed')) {
+                replay.speed = THREE.MathUtils.clamp(Number(params.get('speed')) || 4, 1, 10);
+                document.getElementById('replay-speed').value = replay.speed;
+            }
+            if (params.get('cube')) setCubeSize(Number(params.get('cube')) / 100 || DEFAULT_CUBE_SIZE);
+            const url = params.get('replay');
+            if (url) {
+                loadReplayUrl(url).then(() => {
+                    if (params.get('autoplay') !== '0' && replay.trajectory) togglePlay();
+                });
+            }
+        }
+
+        // --- Shape and moves ---
+
+        function canTwist() {
+            return !isAnimating && !replay.playing;
+        }
+
+        async function twistSegment(index, direction, controller) {
+            if (!canTwist()) return;
+            if (index <= 0) {
+                updateStatus("Cannot twist the anchor segment.", true);
+                return;
+            }
+            // Segment i turns about the joint to its predecessor.
+            const joint = index - 1;
+            if (isTwistFree(snake.angles, joint, direction)) {
+                isAutoPlaying = false;
+                if (controller) pulse(controller, 0.3, 30);
+                updateStatus(`Twisting segment ${index + 1}...`);
+                await animateMove(joint, direction);
+                setMoveCount(moveCount + 1);
+                updateReplayInfo();
+                updateStatus("Ready.");
+            } else {
+                if (controller) pulse(controller, 0.9, 120);
+                updateStatus("Blocked! Collision detected.", true);
+                flashError(index);
+            }
+        }
+
+        function showNotation() {
+            document.getElementById('notation-input').value = toNotation(snake.angles);
+            panel?.markDirty();
+        }
+
+        function setShape(angles, message) {
+            if (isAnimating) return;
+            isAutoPlaying = false;
+            replay.playing = false;
+            snake.angles = angles;
+            snake.setPose(angles);
+            setMoveCount(0);
+            showNotation();
+            recenter();
+            updateReplayInfo();
+            updateStatus(message);
+        }
+
+        function setShapeFromInput() {
+            let angles;
+            try {
+                angles = parseNotation(document.getElementById('notation-input').value);
+            } catch (e) {
+                updateStatus(e.message, true);
+                return;
+            }
+            const collisions = K.findCollisions(angles);
+            if (collisions.length > 0) {
+                const [i, j] = collisions[0];
+                updateStatus(`Invalid shape: segments ${i + 1} and ${j + 1} overlap.`, true);
+                return;
+            }
+            setShape(angles, "Shape set.");
+            frameView();
+        }
+
+        function flashError(index) {
+            snake.segments[index].userData.flashUntil = performance.now() + 300;
+        }
+
+        function startAuto() {
+            if (isAutoPlaying) return;
+            replay.playing = false;
+            isAutoPlaying = true;
+            updateStatus("Auto-pilot started");
+        }
+
+        function stopAuto() {
+            isAutoPlaying = false;
+            updateStatus("Auto-pilot stopped");
+        }
+
+        async function gameLoop() {
+            if (isAutoPlaying && !isAnimating) {
+                const moves = K.validMoves(snake.angles);
+                let move = null;
+                while (moves.length > 0 && !move) {
+                    const [candidate] = moves.splice(Math.floor(Math.random() * moves.length), 1);
+                    if (isTwistFree(snake.angles, candidate.joint, candidate.direction)) move = candidate;
+                }
+                if (move) {
+                    updateStatus(`Auto: twisting segment ${move.joint + 2}`);
+                    await animateMove(move.joint, move.direction);
+                    setMoveCount(moveCount + 1);
+                }
+            }
+            setTimeout(gameLoop, isAutoPlaying ? 50 : 100);
+        }
+
+        // --- Animation ---
+        // Animations are advanced from the render loop, because window.requestAnimationFrame
+        // does not run while an immersive session is presenting.
+        let currentAnimation = null;
+
+        function runAnimation(step) {
+            return new Promise(resolve => {
+                isAnimating = true;
+                currentAnimation = { step, resolve };
+            });
+        }
+
+        function tickAnimation(frames) {
+            if (!currentAnimation) return;
+            if (currentAnimation.step(frames)) {
+                const { resolve } = currentAnimation;
+                currentAnimation = null;
+                isAnimating = false;
+                resolve();
+            }
+        }
+
+        function animateMove(joint, direction, speed = ANIMATION_SPEED) {
+            const start = snake.angles;
+            let progress = 0;
+            return runAnimation(frames => {
+                progress = Math.min(1, progress + speed * frames);
+                const ease = 1 - Math.pow(1 - progress, 3);
+                const frame = start.slice();
+                frame[joint] += direction * ease;
+                snake.setPose(frame);
+                if (progress < 1) return false;
+                snake.angles = K.twist(start, joint, direction);
+                snake.setPose(snake.angles);
+                showNotation();
+                return true;
+            });
+        }
+
+        // A blocked twist: turn a little way and back, the shape does not change.
+        function animateWiggle(joint, direction, speed = ANIMATION_SPEED) {
+            const start = snake.angles;
+            let progress = 0;
+            return runAnimation(frames => {
+                progress = Math.min(1, progress + speed * frames);
+                const frame = start.slice();
+                frame[joint] += direction * 0.12 * Math.sin(progress * Math.PI);
+                snake.setPose(frame);
+                if (progress < 1) return false;
+                snake.setPose(start);
+                return true;
+            });
+        }
+
+        // --- Render loop ---
+        function render(time, frame) {
+            const dt = Math.min(clock.getDelta(), 0.1);
+            tickAnimation(dt * 60);
+            const now = performance.now();
+
+            if (renderer.xr.isPresenting) {
+                const tracked = trackHead(frame);
+                if (placeOnNextFrame && tracked) {
+                    placeOnNextFrame = false;
+                    recenter();
+                    placeInFront();
+                }
+                handleThumbsticks(dt);
+                updateControllers(frame);
+                if (controllers.some(c => c.userData.grabbing === stage)) updateLight();
+            } else {
+                controls.update();
+                hovered.clear();
+                raycaster.setFromCamera(pointer, camera);
+                const hit = raycaster.intersectObjects(collisionObjects)[0];
+                const index = hit ? hit.object.userData.segmentIndex : -1;
+                if (index > 0 && canTwist()) hovered.add(snake.segments[index]);
+                document.body.style.cursor = index > 0 && canTwist() ? 'pointer' : 'default';
+            }
+            snake.updateMaterials(now);
+            panel.update(now);
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>

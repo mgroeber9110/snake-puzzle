@@ -62,3 +62,25 @@ Run the tests with `npm test` (Node 22 or later, no dependencies).
   ghost beside the snake (`meta.target_name` is an optional label for the panel), and the panel shows the distance to it and whether it was reached (also when
   read from the other end of the snake).
 - The trajectories written by `sim/train/evaluate*.py` (`sim/runs/*/trajectories/`) can be loaded directly.
+
+## VR and AR on Meta Quest
+
+`src/snake-xr.html` shows the snake in VR or in AR (passthrough) with WebXR, so it runs in the Meta Quest browser
+without a native app. It uses the same modules as `snake4.html` (`kinematics.js`, `sweep.js`, `notation.js`) and the
+same replays and trajectory format (`?replay=<url>`, `&speed=1..10`, `&autoplay=0`, and `&cube=<cm>` for the size of
+one lattice cube, default 4 cm).
+
+- On the desktop the page works like `snake4.html`. In the headset, "Enter VR" puts the snake on a small table in a dark
+  room, "Enter AR" puts it in your real room with a shadow under it.
+- Inside VR/AR a panel next to the snake has the replay controls (◀ ▶ to choose an example, Play/Pause, Step, Reset,
+  target ghost on/off, speed), the size of the snake, random auto moves, Straight, Recenter, the current shape in
+  Wolter notation and Exit. In AR, "Place on surface" puts the snake on a table or the floor (WebXR hit test).
+- Controllers: trigger on a segment twists it +90° (the panel can switch this to −90°), grip on a segment twists it
+  the other way, grip elsewhere grabs the snake (or the panel) and carries it. Thumbstick left/right turns the snake,
+  up/down scales it. With hand tracking, pinching works like the trigger.
+- A shape can be typed into the notation field before entering VR/AR.
+
+WebXR needs a secure origin, so the Quest browser only offers VR/AR when the page comes from `https://` or from
+`localhost`. Either put `src` on an HTTPS server, or connect the Quest by USB and forward the local server to it:
+`adb reverse tcp:8000 tcp:8000`, then open `http://localhost:8000/snake-xr.html` on the Quest.
+For testing on the desktop, Meta's Immersive Web Emulator (browser extension) emulates a Quest.
