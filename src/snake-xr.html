@@ -139,7 +139,7 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
-        import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+        import { XRHandMeshModel } from 'three/addons/webxr/XRHandMeshModel.js';
         import * as K from './kinematics.js';
         import { isTwistFree } from './sweep.js';
         import { parseNotation, toNotation } from './notation.js';
@@ -172,6 +172,7 @@
         let xrMode = null;           // null (desktop), 'immersive-vr' or 'immersive-ar'
         let placeOnNextFrame = false;
         let placing = false;         // AR: next trigger with a surface hit places the snake
+        let onSurface = false;       // AR: the snake stands on a real surface (only then a shadow is drawn)
         const replayList = [];       // {url, label} from replays/index.json
         let replayListIndex = -1;
 
@@ -549,6 +550,8 @@
             panel.mesh.position.copy(eye).addScaledVector(dir, 0.5).addScaledVector(left, 0.5);
             panel.mesh.position.y = eye.y - 0.15;
             panel.mesh.lookAt(eye.x, panel.mesh.position.y, eye.z);
+            onSurface = false;
+            updateShadowCatcher();
             updateLight();
         }
 
@@ -578,7 +581,6 @@
 
             // Controllers: pointer rays, controller and hand models.
             const controllerModels = new XRControllerModelFactory();
-            const handModels = new XRHandModelFactory();
             const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
             for (let i = 0; i < 2; i++) {
                 const c = renderer.xr.getController(i);
@@ -612,7 +614,7 @@
                 grip.add(controllerModels.createControllerModel(grip));
                 scene.add(grip);
                 const hand = renderer.xr.getHand(i);
-                hand.add(handModels.createHandModel(hand, 'mesh'));
+                hand.add(new HandModel(hand));
                 scene.add(hand);
             }
 
@@ -678,8 +680,44 @@
             scene.fog = ar ? null : new THREE.Fog(0x202024, 6, 20);
             floorGroup.visible = !ar;
             table.visible = !ar;
-            shadowCatcher.visible = ar;
+            onSurface = false;
+            updateShadowCatcher();
             panel?.markDirty();
+        }
+
+        // In AR the shadow is only drawn when the snake stands on a real surface;
+        // floating in the room it would fall on an invisible plane in mid-air.
+        function updateShadowCatcher() {
+            shadowCatcher.visible = xrMode === 'immersive-ar' && onSurface;
+        }
+
+        // Hand mesh that follows the handedness of the hand currently tracked at
+        // this index. three's XRHandModelFactory loads the mesh only for the first
+        // hand it sees there, so when the input sources come in another order
+        // (e.g. after switching from controllers to hands) a left mesh is driven
+        // by right-hand joints and looks turned inside out.
+        class HandModel extends THREE.Object3D {
+            constructor(hand) {
+                super();
+                this.hand = hand;
+                this.handedness = null;
+                this.holder = null;
+                this.meshModel = null;
+                hand.addEventListener('connected', (e) => {
+                    const src = e.data;
+                    if (!src.hand || src.handedness === this.handedness) return;
+                    if (this.holder) this.remove(this.holder);
+                    this.holder = new THREE.Object3D();
+                    this.add(this.holder);
+                    this.handedness = src.handedness;
+                    this.meshModel = new XRHandMeshModel(this.holder, hand, null, src.handedness);
+                });
+            }
+
+            updateMatrixWorld(force) {
+                super.updateMatrixWorld(force);
+                this.meshModel?.updateMesh();
+            }
         }
 
         function exitXR() {
@@ -723,6 +761,8 @@
                 const yaw = Math.atan2(eye.x - stage.position.x, eye.z - stage.position.z);
                 stage.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
                 placing = false;
+                onSurface = true;
+                updateShadowCatcher();
                 updateLight();
                 updateStatus('Placed.');
                 pulse(c, 0.4, 40);
@@ -747,6 +787,7 @@
             if (controllers.some(o => o !== c && o.userData.grabbing === target)) return;
             c.attach(target);
             c.userData.grabbing = target;
+            if (target === stage) { onSurface = false; updateShadowCatcher(); }
             pulse(c, 0.2, 20);
         }
 
@@ -1465,6 +1506,10 @@
                     placeOnNextFrame = false;
                     recenter();
                     placeInFront();
+                    if (xrMode === 'immersive-ar' && hitTestSupported['immersive-ar']) {
+                        placing = true;
+                        updateStatus('Point at a table or the floor and press the trigger.');
+                    }
                 }
                 handleThumbsticks(dt);
                 updateControllers(frame);
