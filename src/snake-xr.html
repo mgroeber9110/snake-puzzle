@@ -897,11 +897,11 @@
                     ...row(520, [
                         ['auto', () => isAutoPlaying ? 'Auto: on' : 'Auto: off', () => isAutoPlaying ? stopAuto() : startAuto(), () => true, () => isAutoPlaying],
                         ['dir', () => twistDirection > 0 ? 'Twist +90°' : 'Twist −90°', () => { twistDirection = -twistDirection; }],
-                        ['straight', () => 'Straight', () => setShape(K.straight(SEGMENT_COUNT), 'Straight stick.'), () => canTwist()],
+                        ['place', () => placing ? 'Placing… (cancel)' : 'Place on surface', startPlacing,
+                            () => xrMode === 'immersive-ar' && hitTestSupported['immersive-ar'], () => placing],
                         ['recenter', () => 'Recenter', () => { recenter(); placeInFront(); }],
                     ]),
-                    B('place', 20, 620, 484, 80, () => placing ? 'Placing… (cancel)' : 'Place on surface', startPlacing,
-                        () => xrMode === 'immersive-ar' && hitTestSupported['immersive-ar'], () => placing),
+                    B('straight', 20, 620, 484, 80, () => 'Straight', () => setShape(K.straight(SEGMENT_COUNT), 'Straight stick.'), () => canTwist()),
                     B('exit', 520, 620, 484, 80, () => 'Exit ' + (xrMode === 'immersive-ar' ? 'AR' : 'VR'), exitXR),
                 ];
             }
@@ -996,7 +996,9 @@
                     if (b.id === 'exit' && enabled) ctx.fillStyle = this.hoverIds.has(b.id) ? '#f87171' : '#ef4444';
                     ctx.fill();
                     ctx.fillStyle = enabled ? '#fff' : '#666';
-                    ctx.font = 'bold 30px "Segoe UI", sans-serif';
+                    let size = 30;
+                    do ctx.font = `bold ${size--}px "Segoe UI", sans-serif`;
+                    while (size > 16 && ctx.measureText(b.label()).width > b.w - 16);
                     ctx.textAlign = 'center';
                     ctx.fillText(b.label(), b.x + b.w / 2, b.y + b.h / 2 + 1);
                 }
@@ -1506,10 +1508,6 @@
                     placeOnNextFrame = false;
                     recenter();
                     placeInFront();
-                    if (xrMode === 'immersive-ar' && hitTestSupported['immersive-ar']) {
-                        placing = true;
-                        updateStatus('Point at a table or the floor and press the trigger.');
-                    }
                 }
                 handleThumbsticks(dt);
                 updateControllers(frame);
